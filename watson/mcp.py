@@ -56,7 +56,7 @@ def dispatch(home, message):
                     result = store.history()
                 else:
                     github = GitHub([config['repository']] + config['related_repositories'])
-                    result = triage(store, github, PlowInference(home, config.get('model')), config, arguments['number'])
+                    result = triage(store, github, PlowInference.from_config(home, config), config, arguments['number'])
             return {'content': [{'type': 'text', 'text': json.dumps(result, ensure_ascii=False)}], 'isError': False}
         finally:
             store.db.close()

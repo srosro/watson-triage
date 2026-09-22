@@ -16,9 +16,14 @@ git clone https://github.com/plow-pbc/plow-agents.git
 export PATH="$PWD/plow-agents/bin:$PATH"
 plow-agents login          # text the activation phrase to the number it prints
 plow-agents lines          # keep the ID of a line reported `free`
-plow-agents deploy ghcr.io/srosro/watson-triage@sha256:<digest> --line ln_xxx
+plow-agents image show watson-delltrak --jq .plow.image   # the current digest
+plow-agents deploy "$(plow-agents image show watson-delltrak --jq .plow.image)" --line ln_xxx
 plow-agents agents         # until the status is `running`
 ```
+
+`image show` is a public read and needs no token. It prints the digest Plow
+currently pins, so the deploy always names an immutable reference without
+anybody pasting one by hand.
 
 ## 2. Text it
 
@@ -30,9 +35,10 @@ a time:
   the whole selection rule, so a wrong login means Watson sees nothing rather
   than too much.
 - **a token** — a fine-grained PAT scoped to that repository, with
-  **Issues: read**, **Contents: read** and **Actions: read**. Add
-  **Pull requests: write** only if you want `repair` to open draft pull
-  requests. Create one at
+  **Issues: read**, **Contents: read** and **Actions: read**. For `repair`, add
+  **Contents: write** *and* **Pull requests: write** — it pushes the fix as a
+  branch before opening the draft PR, so pull-request access alone cannot
+  complete one. Create one at
   <https://github.com/settings/personal-access-tokens/new>.
 
 Watson confirms the token by reading the repository's name back to you, never by
@@ -52,6 +58,7 @@ the fix.
 ## Running it on your own machine instead
 
 The same `cycle` runs locally — see the repository README. The local path still
-needs `gh auth login` and a Plow credential for inference (`plow-agents mint`),
+needs the `plow-agents` CLI on your `PATH` (cloned as in step 1), `gh auth login`,
+and a Plow credential for inference (`plow-agents mint`),
 and it is the only path where browser validation and audio work, because both
 need a desktop.

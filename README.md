@@ -35,7 +35,7 @@ Browser validation is configured per issue. A human supplies the trusted test en
 ### On Plow, in one click
 
 ```sh
-plow-agents deploy ghcr.io/srosro/watson-triage@sha256:<digest> --line ln_xxx
+plow-agents deploy "$(plow-agents image show watson-delltrak --jq .plow.image)" --line ln_xxx
 ```
 
 Then text the line. Watson asks for the repository, the assignee and a
@@ -45,7 +45,7 @@ deliberately does not own is in [docs/cloud-variant.md](docs/cloud-variant.md).
 
 ### On your own machine
 
-Requires Python 3.11+, GitHub CLI, and a Plow credential for inference. Browser
+Requires Python 3.11+, GitHub CLI, the [plow-agents CLI](https://github.com/plow-pbc/plow-agents) on your `PATH`, and a Plow credential for inference. Browser
 recording requires the optional browser dependencies. Docker is needed only for
 isolated repair tests.
 
@@ -129,7 +129,7 @@ A reproduced failure is required. Source changes are proposed by the model, whic
 .venv/bin/watson --home .watson voice 1 --output summary.mp3
 ```
 
-The ChatGPT internal Read Aloud endpoint receives `voice=sol` and Portuguese text. It uses a file-backed ChatGPT session at `~/.codex/auth.json`, without a public API key. This is the one path that still wants that file, and it is desktop-only: it is never reached on a cloud agent. This is an internal endpoint and may change or ignore voice selection. It does not refresh tokens and does not support keychain-only authentication. The speech text is sent to ChatGPT; credentials are not copied into memory. An error never silently switches to macOS speech.
+The ChatGPT internal Read Aloud endpoint receives `voice=sol` and Portuguese text. It uses a file-backed ChatGPT session at `${CODEX_HOME:-~/.codex}/auth.json`, without a public API key. This is the one path that still wants that file, and it is desktop-only: it is never reached on a cloud agent. This is an internal endpoint and may change or ignore voice selection. It does not refresh tokens and does not support keychain-only authentication. The speech text is sent to ChatGPT; credentials are not copied into memory. An error never silently switches to macOS speech.
 
 Native iMessage voice bubbles need a Plow backend operation that is not in its published API as inspected on 2026-09-15. `audio_mode=native` blocks file substitution. If the owner explicitly accepts regular files, `audio_mode=attachment` enables the legacy attachment delivery. Text/video workflow updates remain usable while native voice is pending.
 
@@ -137,7 +137,7 @@ Native iMessage voice bubbles need a Plow backend operation that is not in its p
 
 The bundled official client is unmodified, pinned at `87901f8b182a8a7c65ee3dd7267f8f835ee2a545` (Apache-2.0; included NOTICE/license). Watson records every measured inference invocation separately, including unsuccessful attempts that returned usage. OpenAI's counter names are translated into the ones this table stores (`normalize_usage`); untranslated, every row would land as zero. Cached input is separated from total input to avoid double-counting.
 
-`init --model` overrides the default (`z-ai/glm-5.2`) and is recorded as the attribution. No model name is guessed when missing. The compatibility `session_model_usage` table contains real Watson invocation counts; it is not a claim that Watson runs Hermes. The client runs with a separate home so unrelated histories are not reported as Watson work. Do not configure an external agentsview index in that isolated home.
+`init --model` overrides the default (`z-ai/glm-5.2`); whichever applies is what usage is recorded under, so attribution always names a real model. The compatibility `session_model_usage` table contains real Watson invocation counts; it is not a claim that Watson runs Hermes. The client runs with a separate home so unrelated histories are not reported as Watson work. Do not configure an external agentsview index in that isolated home.
 
 Set `agent_index_id` and `agent_repository_url` in private configuration, then:
 

@@ -114,7 +114,7 @@ def main(argv=None):
             else:
                 config = load_config(args.home)
                 github = GitHub([config['repository']] + config['related_repositories'])
-                model = PlowInference(args.home, config.get('model'))
+                model = PlowInference.from_config(args.home, config)
                 if args.command in {'track', 'untrack'}:
                     if args.number < 1:
                         raise WatsonError('Número de issue inválido.')

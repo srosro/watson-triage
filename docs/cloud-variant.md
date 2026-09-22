@@ -22,11 +22,18 @@ out of `~/.codex/auth.json`. The container configures no `browser_profiles`, so
 you want the recorded evidence.
 
 **The owner's GitHub token arrives over chat.** There is no `gh auth login` on a
-tenant VM. The `watson-setup` skill writes a fine-grained PAT to
-`/var/lib/hermes/watson/.env` mode 0600, and the cycle service reads it as root
-before dropping to uid 10000 and hands it to that one invocation. It is never
-published to the container environment, so nothing else in the image — the
-gateway, the index reporter, the inference call — can see it.
+tenant VM. `watson-setup` pipes a fine-grained PAT to
+`/opt/plow/watson-store-token`, which reads stdin (never argv, which `/proc`
+exposes to anything else in the container), checks its shape, and writes
+`/var/lib/hermes/watson/.env` mode 0600.
+
+Who reads it back is the load-bearing part. The cycle service is **root** until
+`s6-setuidgid`, and that file is written by the agent, which reads untrusted
+issue text — so root never opens it. Privileges drop first, and the token is
+then read as `hermes`, from hermes' own file, by `sed` rather than by the
+shell. A line of shell in that file is a string, not a command. It is never
+published to the container environment either, so the gateway, the index
+reporter and the inference call cannot see it.
 
 ## What this repository must not own
 

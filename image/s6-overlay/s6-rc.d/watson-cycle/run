@@ -20,18 +20,30 @@ WATSON_HOME=/var/lib/hermes/watson
 # publishes. The child gets an allowlist instead: naming what to DROP means a
 # name added later leaks by default; naming what to keep means it cannot.
 #
-# GH_TOKEN is deliberately not read from that environment. It is the owner's
-# own, it lives in a file only they and this service touch, and it is added to
-# this one invocation rather than to anything the image publishes.
+# Root never opens $WATSON_HOME/.env. The agent writes that file, the agent
+# reads untrusted issue text, and this service is root until s6-setuidgid --
+# so sourcing it here would have been arbitrary root execution one prompt
+# injection away. Privileges drop FIRST; the token is then read, as hermes,
+# from hermes' own file, by `sed` rather than by the shell, so a line of shell
+# in that file is a string and not a command. It never enters argv either,
+# where `ps` would show it to anything else in the container.
 cycle() {
   /command/s6-setuidgid hermes env -i \
     PATH="$PATH" HOME=/var/lib/hermes \
+    WATSON_HOME="$WATSON_HOME" \
     PLOW_API_BASE="$PLOW_API_BASE" \
     PLOW_AGENT_TOKEN="$PLOW_AGENT_TOKEN" \
     HERMES_CUSTOM_PLOW_API_KEY="$HERMES_CUSTOM_PLOW_API_KEY" \
     ${TZ:+TZ="$TZ"} \
-    GH_TOKEN="$1" \
-    /opt/hermes/.venv/bin/watson --home "$WATSON_HOME" cycle
+    /bin/sh -c '
+      GH_TOKEN=$(sed -n "s/^GH_TOKEN=//p" "$WATSON_HOME/.env" 2>/dev/null | head -n 1)
+      if [ -z "$GH_TOKEN" ]; then
+        echo "watson-cycle: no GitHub token yet; the owner supplies it in chat" >&2
+        exit 0
+      fi
+      export GH_TOKEN
+      exec /opt/hermes/.venv/bin/watson --home "$WATSON_HOME" cycle
+    '
 }
 
 while :; do
@@ -43,19 +55,14 @@ while :; do
     continue
   fi
 
-  # Read as root, before the drop to uid 10000, and never echoed. Absent is the
-  # ordinary state between `init` and the owner sending a token, not a failure.
-  token=$(. "$WATSON_HOME/.env" 2>/dev/null && printf %s "$GH_TOKEN")
-  if [ -z "$token" ]; then
-    echo "watson-cycle: no GitHub token yet; the owner supplies it in chat" >&2
-    /bin/sleep 600
-    continue
-  fi
-
-  # Never fatal. `cycle` exits 1 when any single tracked issue errored, which is
-  # an ordinary outcome -- one unreadable issue must not respawn this service,
+  # The pass's JSON goes to the log, not /dev/null. `cycle` catches per-issue
+  # failures and returns them in that JSON rather than raising, so discarding
+  # it left the only record of what broke nowhere -- and the stderr line below
+  # pointed at a journal that then held nothing.
+  #
+  # Never fatal. `cycle` exits 1 when any single tracked issue errored, which
+  # is an ordinary outcome: one unreadable issue must not respawn this service,
   # and a crashing longrun is respawned in a tight loop.
-  cycle "$token" >/dev/null \
-    || echo "watson-cycle: pass reported errors; see the run's own journal" >&2
+  cycle || echo "watson-cycle: pass reported errors; see its JSON above" >&2
   /bin/sleep 600
 done

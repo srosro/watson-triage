@@ -1,0 +1,31 @@
+#!/bin/sh
+# Store the owner's GitHub token, read from stdin, never from argv.
+#
+# argv is world-readable through /proc to anything else in this container, and
+# it is what a naive `printf 'GH_TOKEN=%s' "$tok"` would put there. stdin is
+# not. The token is in the agent's conversation either way -- the owner texted
+# it -- so what this file can still protect is everything downstream of that:
+# the process table, the file's mode, and the shell's own evaluation.
+#
+# Written as one KEY=value line with no quoting and no expansion, because the
+# reader (the watson-cycle service) parses it with `sed` rather than sourcing
+# it. Anything else here would be a string in that parse, not a command -- the
+# guarantee this format exists to keep.
+set -eu
+
+home=${WATSON_HOME:-/var/lib/hermes/watson}
+token=$(cat)
+
+case $token in
+  *[!-A-Za-z0-9_]*|'')
+    echo "watson-store-token: that does not look like a GitHub token." >&2
+    echo "Expected only letters, digits, - and _ on one line." >&2
+    exit 1
+    ;;
+esac
+
+install -d -m 0700 "$home"
+umask 077
+printf 'GH_TOKEN=%s\n' "$token" > "$home/.env.new"
+mv "$home/.env.new" "$home/.env"
+echo "stored"

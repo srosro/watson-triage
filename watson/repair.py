@@ -33,7 +33,7 @@ def repair(home, number):
             if not allowed or len(allowed)>12 or any(not safe_source(p) for p in allowed):
                 raise WatsonError('Lista de arquivos autorizados inválida.')
             files={p:gh.file(repo,p,sha)['content'] for p in allowed}
-            model=PlowInference(home,config.get('model'))
+            model=PlowInference.from_config(home,config)
             proposal=model.ask('Propose the smallest source fix and a meaningful regression test for the reproduced bug. '
                 'Return complete file contents without line-number prefixes. Change only allowed files. '
                 'Never change authentication, dependencies, workflows, credentials, or unrelated code. '

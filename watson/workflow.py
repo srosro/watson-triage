@@ -82,7 +82,7 @@ def notify(store, config, run_id, issue, result, state, validation):
 def cycle(home, *, model=None, github=None, writer=None):
     home=Path(home).resolve(); config=load_config(home); store=Store(home)
     github=github or GitHub([config['repository']]+config.get('related_repositories',[]))
-    model=model or PlowInference(home,config.get('model'))
+    model=model or PlowInference.from_config(home,config)
     writer=writer or GitHubWriter(config['repository'],enabled=config.get('github_comments',False))
     cases=Cases(store); outcome={'processed':[],'unchanged':[],'errors':[]}
     try:

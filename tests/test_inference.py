@@ -133,6 +133,54 @@ class InferenceTest(unittest.TestCase):
             PlowInference(self.home, opener=opener).ask('inst', {}, SCHEMA, 'label')
         self.assertEqual(seen['auth'], 'Bearer chat-bearer')
 
+    def test_a_local_install_uses_its_minted_credential_file(self):
+        # Delivery has always read the token from here; inference reading only
+        # the environment left a correctly configured local install with
+        # working delivery and a failure on every triage.
+        credential = self.home / 'plow-credentials'
+        credential.write_text('PLOW_AGENT_TOKEN=minted\nPLOW_API_BASE=https://api.plow.co\n')
+        seen = {}
+
+        def opener(request, timeout=None):
+            seen['auth'] = request.get_header('Authorization')
+            return completion('{"answer": "ok"}')
+
+        with patch.dict(os.environ, {}, clear=True):
+            model = PlowInference.from_config(
+                self.home, {'plow_credential_file': str(credential)}, opener=opener)
+            model.ask('inst', {}, SCHEMA, 'label')
+        self.assertEqual(seen['auth'], 'Bearer minted')
+
+    def test_the_configured_model_survives_from_config(self):
+        seen = {}
+
+        def opener(request, timeout=None):
+            seen['body'] = json.loads(request.data)
+            return completion('{"answer": "ok"}')
+
+        PlowInference.from_config(
+            self.home, {'model': 'anthropic/claude-sonnet-5'}, opener=opener
+        ).ask('inst', {}, SCHEMA, 'label')
+        self.assertEqual(seen['body']['model'], 'anthropic/claude-sonnet-5')
+
+    def test_a_non_object_response_fails_loudly(self):
+        # A list or string body reaches .get() as AttributeError otherwise, and
+        # a CLI command prints a traceback instead of Watson's own error.
+        def opener(request, timeout=None):
+            return FakeResponse(json.dumps(['nope']).encode())
+
+        with self.assertRaises(WatsonError):
+            self.ask(opener)
+
+    def test_a_malformed_usage_block_does_not_crash(self):
+        def opener(request, timeout=None):
+            return FakeResponse(json.dumps({
+                'choices': [{'message': {'content': '{"answer": "ok"}'}}],
+                'usage': {'prompt_tokens': 5, 'completion_tokens': 1,
+                          'prompt_tokens_details': 'unexpected'}}).encode())
+
+        self.assertEqual(self.ask(opener), {'answer': 'ok'})
+
     def test_a_plaintext_base_is_refused(self):
         with patch.dict(os.environ, {'PLOW_API_BASE': 'http://api.plow.co'}, clear=False):
             with self.assertRaises(WatsonError):

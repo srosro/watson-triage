@@ -1,7 +1,7 @@
 ---
 name: watson-setup
 description: Set up or repair Watson's GitHub access — which repository to watch, which login's assigned issues to read, and the token to read them with. Trigger when the owner first messages this agent, when they ask Watson to watch a repository, or when the cycle reports that it has no configuration or no GitHub token.
-allowed-tools: Bash(/opt/hermes/.venv/bin/watson:*), Bash(install:*), Bash(/usr/bin/gh:*)
+allowed-tools: Bash(/opt/hermes/.venv/bin/watson:*), Bash(/opt/plow/watson-store-token:*), Bash(/usr/local/bin/gh:*)
 ---
 
 # Watson setup
@@ -18,35 +18,9 @@ can be added later; do not ask about them now.
 
 Ask which GitHub login's assigned issues are the owner's. Usually their own.
 Watson reads only issues assigned to this login — that is the whole selection
-rule, so getting it wrong means Watson sees nothing rather than too much.
+rule, so a wrong login means Watson sees nothing rather than too much.
 
-## 3. The token
-
-Ask for a **fine-grained personal access token** scoped to that repository, with
-**Issues: read**, **Contents: read** and **Actions: read** — plus
-**Pull requests: write** only if they want `repair` to open draft pull requests.
-Point them at <https://github.com/settings/personal-access-tokens/new>.
-
-Write it and nothing else, without it passing through your reply:
-
-```bash
-install -d -m 0700 /var/lib/hermes/watson
-umask 077 && printf 'GH_TOKEN=%s\n' "$TOKEN" > /var/lib/hermes/watson/.env
-```
-
-Never echo the token, never put it in a GitHub comment, and never repeat it back
-for confirmation. Confirm by what it can reach instead:
-
-```bash
-GH_TOKEN=$(. /var/lib/hermes/watson/.env; printf %s "$GH_TOKEN") \
-  /usr/bin/gh api repos/OWNER/REPO --jq .full_name
-```
-
-The repository's name back means the token works. A failure means one of the
-four permissions is missing — say which one the call needed and ask for a
-replacement. Do not work around it.
-
-## 4. Initialise
+## 3. Initialise, before asking for anything secret
 
 ```bash
 /opt/hermes/.venv/bin/watson --home /var/lib/hermes/watson init \
@@ -55,7 +29,48 @@ replacement. Do not work around it.
 
 `init` refuses to run twice. If it says this install is already configured and
 the owner wants a different repository, tell them that is a new agent rather
-than an edit, and stop.
+than an edit, and **stop here** — do not go on to ask for a token. Asking first
+and initialising second would replace a working install's credential with one
+scoped to a repository this agent will never watch.
+
+## 4. The token
+
+Ask for a **fine-grained personal access token** scoped to that repository:
+
+| permission | why |
+|---|---|
+| Issues: read | the issues themselves and their conversations |
+| Contents: read | the source the investigation cites |
+| Actions: read | run results and failed steps |
+| Contents: **write** | only for `repair` — it pushes the fix as a branch |
+| Pull requests: **write** | only for `repair` — the draft PR on that branch |
+
+Both write permissions are needed together for repairs: `repair` creates a tree,
+a commit and a ref before it opens the pull request, so pull-request access
+alone cannot complete one. Point the owner at
+<https://github.com/settings/personal-access-tokens/new>.
+
+Store it by piping it to the helper, which reads stdin, checks the shape, and
+writes `0600`:
+
+```bash
+printf %s 'THE_TOKEN' | /opt/plow/watson-store-token
+```
+
+It prints `stored`, never the token. Do not echo the token back to the owner,
+do not put it in a GitHub comment, and do not repeat it for confirmation.
+
+Confirm by what it can reach:
+
+```bash
+/usr/local/bin/gh api repos/OWNER/REPO --jq .full_name
+```
+
+The repository's name back means the token reaches the repository. If it fails,
+say so and ask for a replacement rather than working around it. A token that
+reads the repository but is short a permission surfaces on the first cycle, in
+that cycle's own error — report that error to the owner verbatim and name the
+permission it asks for.
 
 ## 5. Baseline
 

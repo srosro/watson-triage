@@ -57,6 +57,13 @@ RUN set -eu; \
 #
 # No agent-index service here: the base already ships that reporter and the
 # client it runs. A variant supplies AGENT_ID and nothing else.
+# Root-owned under /opt/plow, outside every home, for the reason the base keeps
+# its index client there: the agent's home belongs to uid 10000 in a running
+# container, so a helper scheduled from there would run whatever a turn last
+# wrote into it.
+COPY image/scripts/watson-store-token /opt/plow/watson-store-token
+RUN chmod 0755 /opt/plow/watson-store-token
+
 COPY image/s6-overlay/ /etc/s6-overlay/
 RUN chmod 0755 /etc/s6-overlay/s6-rc.d/watson-cycle/run
 

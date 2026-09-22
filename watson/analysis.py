@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .core import WatsonError, digest, now, private_json
-from .delivery import NoRedirect
+from .delivery import NoRedirect, credential_values
 
 
 def object_schema(properties):
@@ -38,7 +38,9 @@ def normalize_usage(usage):
     already has that property, so it maps across directly; splitting it here
     would have the cache subtracted twice.
     """
-    details = usage.get('prompt_tokens_details') or {}
+    details = usage.get('prompt_tokens_details')
+    if not isinstance(details, dict):
+        details = {}
     return {'input_tokens': usage.get('prompt_tokens', 0),
             'cached_input_tokens': details.get('cached_tokens', 0),
             'output_tokens': usage.get('completion_tokens', 0)}
@@ -60,19 +62,34 @@ class PlowInference:
     GitHub credentials are the collector's, and never reach the model.
     """
 
-    def __init__(self, home, model=None, *, opener=None):
+    def __init__(self, home, model=None, *, token=None, base=None, opener=None):
         self.home, self.model = Path(home), model or DEFAULT_MODEL
+        self.token, self.base = token, base
         self.opener = opener or urllib.request.build_opener(NoRedirect).open
 
+    @classmethod
+    def from_config(cls, home, config, **kwargs):
+        """A local install keeps its minted credential in `plow_credential_file`
+        rather than in the environment -- delivery already reads it there, so
+        inference reading only the environment left a correctly configured
+        install with working delivery and a failure on every triage.
+        """
+        values = credential_values(config)
+        return cls(home, config.get('model'),
+                   token=values.get('PLOW_AGENT_TOKEN'),
+                   base=values.get('PLOW_API_BASE'), **kwargs)
+
     def _credentials(self):
-        base = (os.environ.get('PLOW_API_BASE') or 'https://api.plow.co').rstrip('/')
+        base = (self.base or os.environ.get('PLOW_API_BASE')
+                or 'https://api.plow.co').rstrip('/')
         if urlparse(base).scheme != 'https':
             raise WatsonError('A inferência exige HTTPS; verifique PLOW_API_BASE.')
-        key = (os.environ.get('HERMES_CUSTOM_PLOW_API_KEY')
+        key = (self.token or os.environ.get('HERMES_CUSTOM_PLOW_API_KEY')
                or os.environ.get('PLOW_AGENT_TOKEN'))
         if not key:
             raise WatsonError('Sem credencial de inferência: HERMES_CUSTOM_PLOW_API_KEY '
-                              'não está no ambiente. Conecte uma linha do Plow.')
+                              'não está no ambiente nem plow_credential_file no config. '
+                              'Conecte uma linha do Plow.')
         return base, key
 
     def ask(self, instruction, payload, schema, label):
@@ -101,6 +118,8 @@ class PlowInference:
             raise WatsonError(f'A inferência do Plow respondeu {exc.code}.') from None
         except (urllib.error.URLError, TimeoutError, ValueError):
             raise WatsonError('A inferência do Plow não respondeu; tente novamente.') from None
+        if not isinstance(answer, dict):
+            raise WatsonError('A inferência do Plow retornou uma resposta inválida.')
         usage = answer.get('usage') or {}
         audit = {'at': now(), 'label': label, 'usage': [usage]}
         private_json(self.home / f'{label}-usage.json', audit)
