@@ -21,23 +21,23 @@ out of `~/.codex/auth.json`. The container configures no `browser_profiles`, so
 `voice` and `deliver --audio` are explicit commands. Run Watson on your Mac when
 you want the recorded evidence.
 
-**The owner's GitHub token arrives over chat.** There is no `gh auth login` on a
-tenant VM. `watson-setup` has the agent write a fine-grained PAT to
-`/var/lib/hermes/watson/.env` with its own file-writing tool rather than a shell
-command — a shell command would put the token in that shell's `/proc/…/cmdline`,
-readable by anything else in the container. The file sits in a home owned
-`root:hermes` mode `3770`, so only the agent and root can traverse it.
+**The owner's GitHub token is deploy-time input, never something the agent is
+told.** A token the owner texts is in the model's context by construction, and
+therefore at the inference provider — a repository credential disclosed to a
+third party. No file mode or parsing discipline reaches that, because the
+disclosure happens before anything is written down, so the ask never happens:
+`watson-setup` refuses a token even when offered.
 
-The token is in the agent's conversation by construction: the owner texted it.
-That is a fact to be honest with them about, not one to engineer around.
+The cycle service takes `GH_TOKEN` from the container environment, which the
+host sets. Compose supplies it through `env_file` (`./watson-github`). The
+hosted `plow-agents deploy` path injects only `PLOW_*`, so a hosted Watson
+stands down, loudly, until [issue #2](https://github.com/srosro/watson-triage/issues/2)
+lands GitHub device authorization — where the owner gets a short code and a URL,
+neither of which is a secret, and the token is minted straight to the agent.
 
-Who reads it back is the load-bearing part. The cycle service is **root** until
-`s6-setuidgid`, and that file is written by the agent, which reads untrusted
-issue text — so root never opens it. Privileges drop first, and the token is
-then read as `hermes`, from hermes' own file, by `sed` rather than by the
-shell. A line of shell in that file is a string, not a command. It is never
-published to the container environment either, so the gateway, the index
-reporter and the inference call cannot see it.
+Reading it from the environment rather than a file the agent writes is the other
+half. This service is root until `s6-setuidgid`; an agent-written file sourced
+here was arbitrary root execution one prompt injection away.
 
 ## What this repository must not own
 

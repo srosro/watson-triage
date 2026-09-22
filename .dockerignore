@@ -13,3 +13,4 @@ tests
 .venv/
 plow-credentials
 docs/superpowers/
+watson-github

@@ -45,6 +45,8 @@ def main(argv=None):
     init.add_argument('--related', action='append', default=[])
     init.add_argument('--model')
     init.add_argument('--delivery', choices=['text', 'both'], default='text')
+    init.add_argument('--notify-owner', action='store_true',
+                      help='Enviar a atualização de cada issue ao dono da linha Plow.')
     for cmd in ('track', 'untrack', 'triage'):
         sub.add_parser(cmd).add_argument('number', type=int)
     sub.add_parser('sync')
@@ -108,6 +110,7 @@ def main(argv=None):
                 config = {'repository': repo_name(args.repo), 'assignee': args.assignee,
                           'related_repositories': [repo_name(r) for r in args.related],
                           'model': args.model, 'delivery': args.delivery,
+                          'notify_owner': args.notify_owner,
                           'speech_provider': 'chatgpt', 'speech_voice': 'sol', 'audio_mode': 'native'}
                 private_json(args.home / 'config.json', config)
                 output = {'initialized': str(args.home), 'config': config}

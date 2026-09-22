@@ -15,38 +15,35 @@ export PATH
 
 WATSON_HOME=/var/lib/hermes/watson
 
-# with-contenv hands this script the whole container environment -- the Plow
-# bearer, the inference key, the loopback API key, whatever a later boot
-# publishes. The child gets an allowlist instead: naming what to DROP means a
-# name added later leaks by default; naming what to keep means it cannot.
-#
-# Root never opens $WATSON_HOME/.env. The agent writes that file, the agent
-# reads untrusted issue text, and this service is root until s6-setuidgid --
-# so sourcing it here would have been arbitrary root execution one prompt
-# injection away. Privileges drop FIRST; the token is then read, as hermes,
-# from hermes' own file, by `sed` rather than by the shell, so a line of shell
-# in that file is a string and not a command. It never enters argv either,
-# where `ps` would show it to anything else in the container.
+# GH_TOKEN comes from the container environment, which the host sets -- never
+# from a file the agent writes. Both halves of that are load-bearing. An
+# agent-written file read by this root script was arbitrary root execution one
+# prompt injection away; and a token the agent had to RECEIVE, to write that
+# file, is a repository credential disclosed to the inference provider, because
+# a texted secret is in the model's context by construction. There is no way to
+# hold the second one at arm's length once it has been said out loud, so the
+# ask never happens. See issue #2 for the hosted path's device flow.
 cycle() {
   /command/s6-setuidgid hermes env -i \
     PATH="$PATH" HOME=/var/lib/hermes \
-    WATSON_HOME="$WATSON_HOME" \
     PLOW_API_BASE="$PLOW_API_BASE" \
     PLOW_AGENT_TOKEN="$PLOW_AGENT_TOKEN" \
     HERMES_CUSTOM_PLOW_API_KEY="$HERMES_CUSTOM_PLOW_API_KEY" \
+    GH_TOKEN="$GH_TOKEN" \
     ${TZ:+TZ="$TZ"} \
-    /bin/sh -c '
-      GH_TOKEN=$(sed -n "s/^GH_TOKEN=//p" "$WATSON_HOME/.env" 2>/dev/null | head -n 1)
-      if [ -z "$GH_TOKEN" ]; then
-        echo "watson-cycle: no GitHub token yet; the owner supplies it in chat" >&2
-        exit 0
-      fi
-      export GH_TOKEN
-      exec /opt/hermes/.venv/bin/watson --home "$WATSON_HOME" cycle
-    '
+    /opt/hermes/.venv/bin/watson --home "$WATSON_HOME" cycle
 }
 
 while :; do
+  if [ -z "$GH_TOKEN" ]; then
+    # Stand down rather than guess. The token is deploy-time input: compose
+    # takes it through env_file, and the hosted path waits on issue #2.
+    echo "watson-cycle: no GH_TOKEN in this container's environment -- standing" >&2
+    echo "down. Set it where this container is started (compose.yml)." >&2
+    /bin/sleep 600
+    continue
+  fi
+
   if [ ! -f "$WATSON_HOME/config.json" ]; then
     # Not an error: a fresh agent has not been through watson-setup yet, and
     # there is nothing here to poll for -- the owner finishes it in chat.

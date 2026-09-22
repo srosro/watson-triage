@@ -25,26 +25,43 @@ plow-agents agents         # until the status is `running`
 currently pins, so the deploy always names an immutable reference without
 anybody pasting one by hand.
 
-## 2. Text it
+## 2. Give it a GitHub token — at deploy time, not in chat
 
-Text the number `plow-agents lines` showed. Watson asks for three things, one at
-a time:
+**Watson will not accept a token you text it, and will refuse if you offer.** A
+token in the conversation is in the model's context and therefore at the
+inference provider; that is a repository credential handed to a third party, and
+nothing downstream can undo it.
+
+Create a **fine-grained PAT** scoped to the repository, with **Issues: read**,
+**Contents: read** and **Actions: read**. For `repair`, add **Contents: write**
+*and* **Pull requests: write** — it pushes the fix as a branch before opening the
+draft PR, so pull-request access alone cannot complete one. Create one at
+<https://github.com/settings/personal-access-tokens/new>.
+
+Running locally with compose, put it in `./watson-github` as one line:
+
+```
+GH_TOKEN=github_pat_…
+```
+
+On the hosted path, `plow-agents deploy` injects only the `PLOW_*` variables, so
+there is no hook for this yet and the agent stands down with "no GH_TOKEN"
+until [issue #2](https://github.com/srosro/watson-triage/issues/2) lands device
+authorization. **Until then, the hosted path is deploy-only — run Watson under
+compose if you want it working today.**
+
+## 3. Text it
+
+Text the number `plow-agents lines` showed. Watson asks for two things:
 
 - **the repository** — `owner/repo`
 - **the assignee** — the GitHub login whose assigned issues are yours. This is
   the whole selection rule, so a wrong login means Watson sees nothing rather
   than too much.
-- **a token** — a fine-grained PAT scoped to that repository, with
-  **Issues: read**, **Contents: read** and **Actions: read**. For `repair`, add
-  **Contents: write** *and* **Pull requests: write** — it pushes the fix as a
-  branch before opening the draft PR, so pull-request access alone cannot
-  complete one. Create one at
-  <https://github.com/settings/personal-access-tokens/new>.
 
-Watson confirms the token by reading the repository's name back to you, never by
-repeating the token.
+It checks the deploy-time token by reading the repository's name back.
 
-## 3. What happens next
+## 4. What happens next
 
 The first sync records a baseline and deliberately does **not** work through
 your backlog. Issues assigned to you from then on are picked up on their own,

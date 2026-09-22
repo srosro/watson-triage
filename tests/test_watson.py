@@ -116,6 +116,18 @@ class WatsonTests(unittest.TestCase):
         self.github.items = [copy.deepcopy(ISSUE)]
         self.assertEqual(sync(self.store, self.github, CONFIG)['newly_tracked'], [7])
 
+    def test_init_records_whether_the_owner_hears_about_updates(self):
+        # `notify()` returns immediately when notify_owner is absent, so an
+        # init that never wrote the key promised unattended updates and then
+        # silently dropped every one of them.
+        from watson.cli import main
+        for flag, expected in ((['--notify-owner'], True), ([], False)):
+            with tempfile.TemporaryDirectory() as folder:
+                self.assertEqual(main(['--home', folder, 'init', '--repo', 'demo/repo',
+                                       '--assignee', 'owner'] + flag), 0)
+                config = json.loads((Path(folder) / 'config.json').read_text())
+                self.assertEqual(config['notify_owner'], expected)
+
     def test_secret_and_traversal_paths_excluded(self):
         for path in ['../a.py', '/etc/config.json', '.env', 'app/.env.json', 'auth.json', 'keys/private-key.json']:
             self.assertFalse(safe_source(path), path)
