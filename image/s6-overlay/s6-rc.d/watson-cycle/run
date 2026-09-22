@@ -1,0 +1,61 @@
+#!/command/with-contenv sh
+# One Watson cycle every ten minutes, from boot.
+#
+# A supervised loop rather than a timer: this image is supervised by s6, and
+# that is the shape a periodic job takes under it. Ten minutes because an issue
+# assignment is not urgent and each pass costs a GitHub read per tracked issue;
+# `cycle` is resumable and skips an issue whose event cursor has not moved, so a
+# late or missed tick costs nothing.
+
+# Absolute, because a service inherits the supervision tree's PATH and not a
+# login shell's -- `gh` resolving at all would otherwise be a property of the
+# init's configuration rather than of this file.
+PATH=/command:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+export PATH
+
+WATSON_HOME=/var/lib/hermes/watson
+
+# with-contenv hands this script the whole container environment -- the Plow
+# bearer, the inference key, the loopback API key, whatever a later boot
+# publishes. The child gets an allowlist instead: naming what to DROP means a
+# name added later leaks by default; naming what to keep means it cannot.
+#
+# GH_TOKEN is deliberately not read from that environment. It is the owner's
+# own, it lives in a file only they and this service touch, and it is added to
+# this one invocation rather than to anything the image publishes.
+cycle() {
+  /command/s6-setuidgid hermes env -i \
+    PATH="$PATH" HOME=/var/lib/hermes \
+    PLOW_API_BASE="$PLOW_API_BASE" \
+    PLOW_AGENT_TOKEN="$PLOW_AGENT_TOKEN" \
+    HERMES_CUSTOM_PLOW_API_KEY="$HERMES_CUSTOM_PLOW_API_KEY" \
+    ${TZ:+TZ="$TZ"} \
+    GH_TOKEN="$1" \
+    /opt/hermes/.venv/bin/watson --home "$WATSON_HOME" cycle
+}
+
+while :; do
+  if [ ! -f "$WATSON_HOME/config.json" ]; then
+    # Not an error: a fresh agent has not been through watson-setup yet, and
+    # there is nothing here to poll for -- the owner finishes it in chat.
+    echo "watson-cycle: not configured yet; the owner runs watson-setup in chat" >&2
+    /bin/sleep 600
+    continue
+  fi
+
+  # Read as root, before the drop to uid 10000, and never echoed. Absent is the
+  # ordinary state between `init` and the owner sending a token, not a failure.
+  token=$(. "$WATSON_HOME/.env" 2>/dev/null && printf %s "$GH_TOKEN")
+  if [ -z "$token" ]; then
+    echo "watson-cycle: no GitHub token yet; the owner supplies it in chat" >&2
+    /bin/sleep 600
+    continue
+  fi
+
+  # Never fatal. `cycle` exits 1 when any single tracked issue errored, which is
+  # an ordinary outcome -- one unreadable issue must not respawn this service,
+  # and a crashing longrun is respawned in a tight loop.
+  cycle "$token" >/dev/null \
+    || echo "watson-cycle: pass reported errors; see the run's own journal" >&2
+  /bin/sleep 600
+done
