@@ -21,14 +21,12 @@ out of `~/.codex/auth.json`. The container configures no `browser_profiles`, so
 `voice` and `deliver --audio` are explicit commands. Run Watson on your Mac when
 you want the recorded evidence.
 
-**The owner's GitHub token is deploy-time input, never something the agent is
-told.** [docs/INSTALL.md](INSTALL.md#2-give-it-a-github-token--at-deploy-time-not-in-chat)
-owns the rule and the reason; what matters here is the mechanism. The cycle
-service takes `GH_TOKEN` from the container environment, which the host sets --
-not from a file the agent writes. This service is root until `s6-setuidgid`, so
-an agent-written file sourced here was arbitrary root execution one prompt
-injection away, and the agent could only have written it after being told a
-secret it should never have been told.
+**The owner's GitHub token never enters the agent's reach.**
+[docs/INSTALL.md](INSTALL.md#2-give-it-a-github-token--at-deploy-time-not-in-chat)
+owns the contract; `image/cont-init.d/10-watson-stash-token` owns the mechanism
+and states its one residual. The short version: the gateway shares this
+container and has a shell, so the token is moved to a root-only file and
+deleted from the environment before any service starts.
 
 ## What this repository must not own
 
