@@ -136,13 +136,26 @@ def cycle(home, *, model=None, github=None, writer=None):
                             state={'failed':'reproduced','passed':'validated'}.get(validation['status'],'blocked')
                             cases.validation(repo,number,head,validation)
                     else: state='waiting_info' if result['questions_for_author'] else 'triaged'
-                    # Resolved before the save below: see owner_channel().
+                    # EVERYTHING FALLIBLE BUT SIDE-EFFECT-FREE HAPPENS BEFORE THE SAVE.
+                    #
+                    # The cursor is persisted before the sends, deliberately, so
+                    # an uncertain send is never blindly replayed. That makes the
+                    # save a point of no return: anything that can fail AFTER it
+                    # and before the send leaves the issue marked as handled with
+                    # nothing sent, and the next cycle reads the cursor as
+                    # unchanged and never looks again. One transient failure, one
+                    # update lost for good.
+                    #
+                    # So the owner-chat lookup, the comment composition and the
+                    # writer's fresh-issue preflight are all pulled up here. What
+                    # stays after the save is only claiming an action and sending
+                    # it -- the operations whose uncertainty the checkpoint exists
+                    # to protect against.
                     channel=owner_channel(config)
                     data={'run_id':run['run_id'],'summary':result['summary'],'questions':result['questions_for_author'],
                           'validation':validation,'previous_state':previous['state'] if previous else None,
                           'author':issue['author'],'head_sha':head,'at':now()}
-                    # Persist before side effects: an uncertain send is never blindly replayed.
-                    cases.save(repo,number,cursor,state,data)
+                    pending_comment=None
                     if state in {'waiting_access','waiting_info','reproduced','validated','blocked'} and config.get('github_comments'):
                         # Don't nag repeatedly while still waiting for the same access.
                         if not(previous and previous['state']==state=='waiting_access'):
@@ -151,7 +164,10 @@ def cycle(home, *, model=None, github=None, writer=None):
                             data['language']=language; data['comment_draft']=body
                             data['summary']=owner_summary
                             result={**result,'summary':owner_summary}
-                            data['comment']=writer.comment(store,github,run['run_id'],issue,body,state)
+                            pending_comment=writer.prepare(github,issue,body,state)
+                    cases.save(repo,number,cursor,state,data)
+                    if pending_comment:
+                        data['comment']=writer.send(store,run['run_id'],pending_comment)
                     data['notification']=notify(store,channel,config,run['run_id'],issue,result,state,validation)
                     cases.save(repo,number,cursor,state,data); store.checked(repo,number)
                     if state=='closed': store.track(repo,number,False)

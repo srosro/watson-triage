@@ -71,6 +71,22 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise WatsonError('Redirecionamento recusado na entrega.')
 
 
+def post_json(method, url, data=None, headers=None, timeout=45, opener=None):
+    """The one HTTPS JSON transport: no redirects, no plaintext, parsed result.
+
+    Both callers here carry the same Plow bearer to the same host, so a second
+    copy of this would be two places for the redirect refusal and the scheme
+    check to disagree.
+    """
+    if urlparse(url).scheme != 'https':
+        raise WatsonError('O transporte exige HTTPS.')
+    send = opener or urllib.request.build_opener(NoRedirect).open
+    req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
+    with send(req, timeout=timeout) as response:
+        raw = response.read()
+        return json.loads(raw) if raw else {}
+
+
 class Plow:
     """Owner-DM only. No recipient/URL supplied by model output is accepted."""
     def __init__(self, token=None, request=None):
@@ -86,13 +102,7 @@ class Plow:
         return cls(token=values['PLOW_AGENT_TOKEN']) if values else cls()
 
     def _request(self, method, url, data=None, headers=None):
-        if urlparse(url).scheme != 'https':
-            raise WatsonError('O transporte exige HTTPS.')
-        opener = urllib.request.build_opener(NoRedirect)
-        req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
-        with opener.open(req, timeout=45) as response:
-            raw = response.read()
-            return json.loads(raw) if raw else {}
+        return post_json(method, url, data, headers)
 
     def api(self, method, path, body=None):
         for attempt in range(3):

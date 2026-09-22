@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .core import WatsonError, digest, now, private_json
-from .delivery import NoRedirect, credential_values
+from .delivery import credential_values, post_json
 
 
 def object_schema(properties):
@@ -65,7 +65,7 @@ class PlowInference:
     def __init__(self, home, model=None, *, token=None, base=None, opener=None):
         self.home, self.model = Path(home), model or DEFAULT_MODEL
         self.token, self.base = token, base
-        self.opener = opener or urllib.request.build_opener(NoRedirect).open
+        self.opener = opener
 
     @classmethod
     def from_config(cls, home, config, **kwargs):
@@ -112,14 +112,13 @@ class PlowInference:
             'response_format': {'type': 'json_schema', 'json_schema': {
                 'name': 'watson_answer', 'strict': True, 'schema': schema}},
         }).encode()
-        request = urllib.request.Request(
-            f'{base}/v1/chat/completions', data=body, method='POST',
-            headers={'Authorization': f'Bearer {key}',
-                     'Content-Type': 'application/json',
-                     'User-Agent': 'Watson/0.1'})
         try:
-            with self.opener(request, timeout=TIMEOUT_S) as response:
-                answer = json.load(response)
+            answer = post_json(
+                'POST', f'{base}/v1/chat/completions', body,
+                {'Authorization': f'Bearer {key}',
+                 'Content-Type': 'application/json',
+                 'User-Agent': 'Watson/0.1'},
+                timeout=TIMEOUT_S, opener=self.opener)
         except urllib.error.HTTPError as exc:
             # The status, never the body: an error body echoes the prompt back,
             # and the prompt carries the issue's own text.

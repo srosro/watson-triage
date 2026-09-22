@@ -38,8 +38,9 @@ Create a **fine-grained PAT** scoped to the repository, with **Issues: read**,
 draft PR, so pull-request access alone cannot complete one. Create one at
 <https://github.com/settings/personal-access-tokens/new>.
 
-Running locally with compose, put the **raw token** in `./watson-github` — no
-`GH_TOKEN=` prefix, nothing else in the file — and lock it down:
+Running locally with compose, put the **raw token** in `/etc/watson/github` —
+no `GH_TOKEN=` prefix, nothing else in the file — where compose bind-mounts it
+from:
 
 ```sh
 sudo install -d -m 700 -o root -g root /etc/watson

@@ -12,6 +12,13 @@ from watson.browser import validate_profile, save_access
 from watson.metrics import record_usage
 from test_watson import FakeGitHub, FakeModel, CONFIG, ISSUE
 
+class CommentModel(FakeModel):
+    def ask(self, instruction, payload, schema, label):
+        if label.startswith('comment-'):
+            return {'language':'en','body':'body','owner_summary':'resumo'}
+        return super().ask(instruction,payload,schema,label)
+
+
 class Model(FakeModel):
     def ask(self, instruction, payload, schema, label):
         if label.startswith('comment-'):
@@ -81,6 +88,27 @@ class OwnerChannelTests(unittest.TestCase):
         # send_video is absent from config, so no media rides along.
         self.assertIsNone(media)
 
+    def test_a_failed_comment_preflight_leaves_the_update_retryable(self):
+        # Same checkpoint hazard as the chat lookup, one step further along:
+        # the writer's fresh-issue read and the model's comment composition are
+        # both fallible and both side-effect-free, so they must land before the
+        # cursor is saved. After it, a failure marks the issue handled with
+        # nothing posted and the next cycle never looks again.
+        writer = Mock()
+        writer.prepare.side_effect = WatsonError('a atribuição mudou')
+
+        cfg = dict(self.cfg, github_comments=True, notify_owner=False)
+        private_json(self.home / 'config.json', cfg)
+        outcome = cycle(self.home, model=CommentModel(), github=FakeGitHub(), writer=writer)
+
+        self.assertEqual(outcome['processed'], [])
+        self.assertTrue(outcome['errors'])
+        writer.send.assert_not_called()
+        store = Store(self.home)
+        self.addCleanup(store.db.close)
+        self.assertIsNone(Cases(store).get('demo/repo', 7),
+                          'cursor was saved despite the failed preflight — the update is now lost')
+
     def test_a_quiet_agent_resolves_no_channel(self):
         from watson.workflow import owner_channel
         self.assertIsNone(owner_channel({'notify_owner': False}))
@@ -96,13 +124,18 @@ class FlowTests(unittest.TestCase):
                   'steps':[{'action':'expect_text','selector':'#result','value':'Required'}]}}}
         private_json(self.home/'config.json',self.cfg)
         s=Store(self.home); s.track('demo/repo',7); s.db.close()
-        self.writer=Mock(); self.writer.comment.return_value={'url':'https://github.com/demo/repo/issues/7#comment'}
+        # Two phases, because the cycle checkpoints between them: prepare() is
+        # the fallible-but-side-effect-free half and must run BEFORE the save,
+        # send() is the only uncertainty left after it.
+        self.writer=Mock()
+        self.writer.prepare.return_value={'existing':None,'number':7}
+        self.writer.send.return_value={'url':'https://github.com/demo/repo/issues/7#comment'}
 
     def test_wait_restart_reply_resume_and_no_duplicate(self):
         first=cycle(self.home,model=self.model,github=self.gh,writer=self.writer)
         self.assertEqual(first['processed'][0]['state'],'waiting_access')
         unchanged=cycle(self.home,model=self.model,github=self.gh,writer=self.writer)
-        self.assertEqual(unchanged['unchanged'],[7]); self.assertEqual(self.writer.comment.call_count,1)
+        self.assertEqual(unchanged['unchanged'],[7]); self.assertEqual(self.writer.send.call_count,1)
         save_access(self.home,7,'fake','not-real')
         self.gh.item['comments'].append({'id':12,'body':'Access sent privately. Please try again.','author':'author','url':ISSUE['url']})
         validation={'status':'failed','steps':[{'status':'failed','expected':'Required','actual':'Created'}],'video':None}
@@ -111,7 +144,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(resumed['processed'][0]['state'],'reproduced'); browser.assert_called_once()
         s=Store(self.home); case=Cases(s).get('demo/repo',7); s.db.close()
         self.assertEqual(case['data']['previous_state'],'waiting_access')
-        self.assertEqual(self.writer.comment.call_count,2)
+        self.assertEqual(self.writer.send.call_count,2)
 
     def test_own_comment_does_not_trigger_cycle(self):
         first=event_cursor(copy.deepcopy(ISSUE),'a'*40,None,[])

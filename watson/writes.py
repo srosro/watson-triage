@@ -26,7 +26,15 @@ class GitHubWriter:
             raise WatsonError('Operação GitHub não confirmada; conferir o histórico antes de repetir.')
         return json.loads(result.stdout)
 
-    def comment(self, store, github, run_id, issue, text, kind):
+    def prepare(self, github, issue, text, kind):
+        """Everything fallible that has no side effect: the fresh read, the
+        state checks, the idempotency marker.
+
+        Split from the send because the caller checkpoints between them. A
+        failure here used to land AFTER that checkpoint, which marked the issue
+        handled with nothing posted and no next look -- see the ordering note
+        in workflow.cycle().
+        """
         # The target and author come from a fresh trusted GitHub response, not the model.
         fresh = github.issue(self.repo, issue['number'])
         if fresh['state'] != 'open':
@@ -37,14 +45,24 @@ class GitHubWriter:
         from .core import digest
         marker = f'{MARKER}{digest(payload)} -->'
         existing = next((c for c in fresh['comments'] if marker in c['body']), None)
-        if existing:
-            return {'url':existing['url'],'recovered':True}
-        key = store.claim_action(run_id, 'github_comment', payload)
+        return {'payload':payload,'marker':marker,'text':text,'number':issue['number'],
+                'existing':{'url':existing['url'],'recovered':True} if existing else None}
+
+    def send(self, store, run_id, pending):
+        """Claim, then post. The only uncertainty left after the checkpoint."""
+        if pending['existing']:
+            return pending['existing']
+        key = store.claim_action(run_id, 'github_comment', pending['payload'])
         try:
-            result = self.post(f'issues/{issue["number"]}/comments', {'body':text+'\n\n'+marker})
+            result = self.post(f'issues/{pending["number"]}/comments',
+                               {'body':pending['text']+'\n\n'+pending['marker']})
             receipt = {'url':result['html_url'],'id':result['id']}
             store.action_result(key,'accepted',receipt)
             return receipt
         except Exception:
             store.action_result(key,'unknown',{'instruction':'Conferir comentário antes de reenviar.'})
             raise
+
+    def comment(self, store, github, run_id, issue, text, kind):
+        """The two phases together, for callers that do not checkpoint between."""
+        return self.send(store, run_id, self.prepare(github, issue, text, kind))
