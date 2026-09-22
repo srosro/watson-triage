@@ -12,7 +12,10 @@ thing upstream does not have: a **Plow Hermes cloud variant** — an image built
 `FROM` the pinned Plow base that runs the same `watson cycle` unattended, with
 Plow as the inference lane instead of a local Codex subscription.
 
-Read first: `README.md`, `docs/architecture.md`, `docs/cloud-variant.md`.
+Read first: `README.md`, `docs/architecture.md`, `docs/hermes-plow.md`.
+(`docs/cloud-variant.md` joins that list when the variant PR lands; until
+then it is not on this branch, and a policy that sends a reviewer to a
+missing file supplies no context at all.)
 
 **Operating point:** one operator, zero tenants, pre-PMF, fork of a hackathon
 prototype. The bottleneck is getting one image to boot and report, not scale.
