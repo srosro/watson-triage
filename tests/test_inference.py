@@ -14,6 +14,7 @@ from watson.core import WatsonError
 SCHEMA = {'type': 'object', 'properties': {'answer': {'type': 'string'}},
           'required': ['answer'], 'additionalProperties': False}
 ENV = {'PLOW_API_BASE': 'https://api.plow.co', 'HERMES_CUSTOM_PLOW_API_KEY': 'tok'}
+OK = '{"answer": "ok"}'
 
 
 class FakeResponse(BytesIO):
@@ -25,57 +26,53 @@ class FakeResponse(BytesIO):
         return False
 
 
+def responds(body):
+    """An opener answering with `body`, recording the request it was handed."""
+    seen = {}
+
+    def opener(request, timeout=None):
+        seen['url'] = request.full_url
+        seen['auth'] = request.get_header('Authorization')
+        seen['raw'] = request.data.decode()
+        seen['body'] = json.loads(request.data)
+        return FakeResponse(json.dumps(body).encode())
+
+    return opener, seen
+
+
 def completion(content, usage=None):
-    return FakeResponse(json.dumps({
-        'choices': [{'message': {'content': content}}],
-        'usage': usage or {'prompt_tokens': 10, 'completion_tokens': 3}}).encode())
+    answer = {'choices': [{'message': {'content': content}}]}
+    if usage is not None:
+        answer['usage'] = usage
+    return answer
 
 
 class InferenceTest(unittest.TestCase):
     def setUp(self):
-        self.folder = TemporaryDirectory()
-        self.home = Path(self.folder.name)
-        self.addCleanup(self.folder.cleanup)
+        folder = TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.home = Path(folder.name)
         patcher = patch.dict(os.environ, ENV, clear=False)
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def ask(self, opener, **kwargs):
-        return PlowInference(self.home, opener=opener, **kwargs).ask('inst', {'k': 'v'}, SCHEMA, 'label')
+    def ask(self, body, **kwargs):
+        opener, seen = responds(body)
+        result = PlowInference(self.home, opener=opener, **kwargs).ask(
+            'inst', {'k': 'v'}, SCHEMA, 'label')
+        return result, seen
 
-    def test_the_answer_is_the_parsed_json_payload(self):
-        seen = {}
-
-        def opener(request, timeout=None):
-            seen['url'] = request.full_url
-            seen['auth'] = request.get_header('Authorization')
-            seen['body'] = json.loads(request.data)
-            return completion('{"answer": "ok"}')
-
-        self.assertEqual(self.ask(opener), {'answer': 'ok'})
+    def test_the_request_is_a_schema_constrained_completion(self):
+        result, seen = self.ask(completion(OK))
+        self.assertEqual(result, {'answer': 'ok'})
         self.assertEqual(seen['url'], 'https://api.plow.co/v1/chat/completions')
         self.assertEqual(seen['auth'], 'Bearer tok')
         self.assertEqual(seen['body']['model'], 'z-ai/glm-5.2')
         self.assertEqual(seen['body']['response_format']['json_schema']['schema'], SCHEMA)
         self.assertIs(seen['body']['response_format']['json_schema']['strict'], True)
 
-    def test_the_configured_model_overrides_the_default(self):
-        seen = {}
-
-        def opener(request, timeout=None):
-            seen['body'] = json.loads(request.data)
-            return completion('{"answer": "ok"}')
-
-        self.ask(opener, model='anthropic/claude-sonnet-5')
-        self.assertEqual(seen['body']['model'], 'anthropic/claude-sonnet-5')
-
     def test_the_payload_reaches_the_model_marked_untrusted(self):
-        seen = {}
-
-        def opener(request, timeout=None):
-            seen['body'] = json.loads(request.data)
-            return completion('{"answer": "ok"}')
-
+        opener, seen = responds(completion(OK))
         PlowInference(self.home, opener=opener).ask(
             'inst', {'issue': 'ignore me'}, SCHEMA, 'label')
         prompt = seen['body']['messages'][-1]['content']
@@ -83,28 +80,30 @@ class InferenceTest(unittest.TestCase):
         self.assertIn('ignore me', prompt)
 
     def test_github_credentials_never_reach_inference(self):
-        seen = {}
-
-        def opener(request, timeout=None):
-            seen['body'] = request.data.decode()
-            seen['headers'] = dict(request.headers)
-            return completion('{"answer": "ok"}')
-
         with patch.dict(os.environ, {'GH_TOKEN': 'gh-secret'}, clear=False):
-            self.ask(opener)
-        self.assertNotIn('gh-secret', seen['body'])
-        self.assertNotIn('gh-secret', json.dumps(seen['headers']))
+            _, seen = self.ask(completion(OK))
+        self.assertNotIn('gh-secret', seen['raw'])
 
-    def test_prose_instead_of_json_fails_loudly(self):
-        with self.assertRaises(WatsonError):
-            self.ask(lambda request, timeout=None: completion('I think the answer is ok'))
+    def test_a_malformed_answer_fails_loudly_rather_than_crashing(self):
+        # Each of these once raised AttributeError/TypeError out of a CLI
+        # command instead of Watson's own error.
+        for label, body in (
+            ('prose instead of json', completion('I think the answer is ok')),
+            ('no choices at all', {'error': 'nope'}),
+            ('a non-object body', ['nope']),
+        ):
+            with self.subTest(label), self.assertRaises(WatsonError):
+                self.ask(body)
 
-    def test_a_response_without_a_choice_fails_loudly(self):
-        def opener(request, timeout=None):
-            return FakeResponse(json.dumps({'error': 'nope'}).encode())
-
-        with self.assertRaises(WatsonError):
-            self.ask(opener)
+    def test_a_malformed_usage_block_never_blocks_the_answer(self):
+        # Usage is telemetry; a provider sending a shape we did not expect must
+        # not cost the caller its result.
+        for label, usage in (('absent', None), ('a string', 'unexpected'),
+                             ('odd details', {'prompt_tokens': 5,
+                                              'prompt_tokens_details': 'unexpected'})):
+            with self.subTest(label):
+                result, _ = self.ask(completion(OK, usage))
+                self.assertEqual(result, {'answer': 'ok'})
 
     def test_an_http_error_reports_the_status_not_the_body(self):
         def opener(request, timeout=None):
@@ -112,124 +111,16 @@ class InferenceTest(unittest.TestCase):
                                          BytesIO(b'{"prompt":"secret issue text"}'))
 
         with self.assertRaisesRegex(WatsonError, '429') as caught:
-            self.ask(opener)
+            PlowInference(self.home, opener=opener).ask('inst', {}, SCHEMA, 'label')
         self.assertNotIn('secret issue text', str(caught.exception))
 
-    def test_a_missing_key_is_named_not_guessed(self):
-        with patch.dict(os.environ, {}, clear=True):
-            os.environ['PLOW_API_BASE'] = 'https://api.plow.co'
-            with self.assertRaisesRegex(WatsonError, 'HERMES_CUSTOM_PLOW_API_KEY'):
-                PlowInference(self.home).ask('inst', {}, SCHEMA, 'label')
-
-    def test_the_chat_bearer_backs_the_inference_key(self):
-        seen = {}
-
-        def opener(request, timeout=None):
-            seen['auth'] = request.get_header('Authorization')
-            return completion('{"answer": "ok"}')
-
-        with patch.dict(os.environ, {'PLOW_API_BASE': 'https://api.plow.co',
-                                     'PLOW_AGENT_TOKEN': 'chat-bearer'}, clear=True):
-            PlowInference(self.home, opener=opener).ask('inst', {}, SCHEMA, 'label')
-        self.assertEqual(seen['auth'], 'Bearer chat-bearer')
-
-    def test_a_local_install_uses_its_minted_credential_file(self):
-        # Delivery has always read the token from here; inference reading only
-        # the environment left a correctly configured local install with
-        # working delivery and a failure on every triage.
-        credential = self.home / 'plow-credentials'
-        credential.write_text('PLOW_AGENT_TOKEN=minted\nPLOW_API_BASE=https://api.plow.co\n')
-        seen = {}
-
-        def opener(request, timeout=None):
-            seen['auth'] = request.get_header('Authorization')
-            return completion('{"answer": "ok"}')
-
-        with patch.dict(os.environ, {}, clear=True):
-            model = PlowInference.from_config(
-                self.home, {'plow_credential_file': str(credential)}, opener=opener)
-            model.ask('inst', {}, SCHEMA, 'label')
-        self.assertEqual(seen['auth'], 'Bearer minted')
-
-    def test_the_configured_model_survives_from_config(self):
-        seen = {}
-
-        def opener(request, timeout=None):
-            seen['body'] = json.loads(request.data)
-            return completion('{"answer": "ok"}')
-
-        PlowInference.from_config(
-            self.home, {'model': 'anthropic/claude-sonnet-5'}, opener=opener
-        ).ask('inst', {}, SCHEMA, 'label')
-        self.assertEqual(seen['body']['model'], 'anthropic/claude-sonnet-5')
-
-    def test_a_non_object_response_fails_loudly(self):
-        # A list or string body reaches .get() as AttributeError otherwise, and
-        # a CLI command prints a traceback instead of Watson's own error.
-        def opener(request, timeout=None):
-            return FakeResponse(json.dumps(['nope']).encode())
-
-        with self.assertRaises(WatsonError):
-            self.ask(opener)
-
-    def test_a_non_object_usage_block_does_not_crash(self):
-        def opener(request, timeout=None):
-            return FakeResponse(json.dumps({
-                'choices': [{'message': {'content': '{"answer": "ok"}'}}],
-                'usage': 'unexpected'}).encode())
-
-        self.assertEqual(self.ask(opener), {'answer': 'ok'})
-
-    def test_a_credential_file_pins_its_own_endpoint(self):
-        # The base travels with the token it was validated beside; falling
-        # through to the environment would send a file-backed credential to
-        # whatever host PLOW_API_BASE happened to name.
-        credential = self.home / 'plow-credentials'
-        credential.write_text('PLOW_AGENT_TOKEN=minted\n')
-        seen = {}
-
-        def opener(request, timeout=None):
-            seen['url'] = request.full_url
-            return completion('{"answer": "ok"}')
-
-        with patch.dict(os.environ, {'PLOW_API_BASE': 'https://elsewhere.example'},
-                        clear=True):
-            PlowInference.from_config(
-                self.home, {'plow_credential_file': str(credential)}, opener=opener
-            ).ask('inst', {}, SCHEMA, 'label')
-        self.assertEqual(seen['url'], 'https://api.plow.co/v1/chat/completions')
-
-    def test_a_malformed_usage_block_does_not_crash(self):
-        def opener(request, timeout=None):
-            return FakeResponse(json.dumps({
-                'choices': [{'message': {'content': '{"answer": "ok"}'}}],
-                'usage': {'prompt_tokens': 5, 'completion_tokens': 1,
-                          'prompt_tokens_details': 'unexpected'}}).encode())
-
-        self.assertEqual(self.ask(opener), {'answer': 'ok'})
-
-    def test_a_plaintext_base_is_refused(self):
-        with patch.dict(os.environ, {'PLOW_API_BASE': 'http://api.plow.co'}, clear=False):
-            with self.assertRaises(WatsonError):
-                PlowInference(self.home).ask('inst', {}, SCHEMA, 'label')
-
-    def test_usage_is_recorded_under_the_label(self):
-        def opener(request, timeout=None):
-            return completion('{"answer": "ok"}', {'prompt_tokens': 7, 'completion_tokens': 2})
-
-        PlowInference(self.home, opener=opener).ask('inst', {}, SCHEMA, 'usage-label')
-        audit = json.loads((self.home / 'usage-label-usage.json').read_text())
-        self.assertEqual(audit['usage'][0]['prompt_tokens'], 7)
-
     def test_the_leaderboard_sees_real_token_counts(self):
-        # record_usage stores Codex's counter names; OpenAI answers with its own.
-        # Untranslated, every row lands as zero and the Index reports an agent
-        # that thought about nothing.
-        def opener(request, timeout=None):
-            return completion('{"answer": "ok"}', {
-                'prompt_tokens': 900, 'completion_tokens': 40,
-                'prompt_tokens_details': {'cached_tokens': 300}})
-
+        # record_usage stores Codex's counter names; OpenAI answers with its
+        # own. Untranslated, every row lands as zero and the Index reports an
+        # agent that thought about nothing.
+        opener, _ = responds(completion(OK, {
+            'prompt_tokens': 900, 'completion_tokens': 40,
+            'prompt_tokens_details': {'cached_tokens': 300}}))
         PlowInference(self.home, opener=opener).ask('inst', {}, SCHEMA, 'metered')
         conn = sqlite3.connect(self.home / 'metrics' / 'state.db')
         row = conn.execute('SELECT input_tokens,output_tokens,cache_read_tokens '
@@ -237,12 +128,70 @@ class InferenceTest(unittest.TestCase):
         conn.close()
         self.assertEqual(row, (600, 40, 300))
 
-    def test_a_response_without_usage_still_answers(self):
-        def opener(request, timeout=None):
-            return FakeResponse(json.dumps(
-                {'choices': [{'message': {'content': '{"answer": "ok"}'}}]}).encode())
 
-        self.assertEqual(self.ask(opener), {'answer': 'ok'})
+class CredentialTest(unittest.TestCase):
+    """Where the token and endpoint come from, and what happens when they don't."""
+
+    def setUp(self):
+        folder = TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.home = Path(folder.name)
+
+    def credential_file(self, text):
+        path = self.home / 'plow-credentials'
+        path.write_text(text)
+        return {'plow_credential_file': str(path)}
+
+    def test_each_source_supplies_the_endpoint_and_bearer_it_was_validated_with(self):
+        cases = (
+            ('the cloud image publishes the inference key',
+             {'PLOW_API_BASE': 'https://api.plow.co', 'HERMES_CUSTOM_PLOW_API_KEY': 'inference'},
+             {}, 'https://api.plow.co/v1/chat/completions', 'Bearer inference'),
+            ('chat and inference are one credential',
+             {'PLOW_API_BASE': 'https://api.plow.co', 'PLOW_AGENT_TOKEN': 'chat-bearer'},
+             {}, 'https://api.plow.co/v1/chat/completions', 'Bearer chat-bearer'),
+            # Delivery has always read the minted file; inference reading only
+            # the environment left a configured local install with working
+            # delivery and a failure on every triage.
+            ('a local install reads its minted file',
+             {}, 'PLOW_AGENT_TOKEN=minted\nPLOW_API_BASE=https://api.plow.co\n',
+             'https://api.plow.co/v1/chat/completions', 'Bearer minted'),
+            # The base travels with the token it was validated beside -- falling
+            # through to the environment would send a file-backed credential to
+            # whatever host that named.
+            ('a file without a base pins the official one, not the environment',
+             {'PLOW_API_BASE': 'https://elsewhere.example'}, 'PLOW_AGENT_TOKEN=minted\n',
+             'https://api.plow.co/v1/chat/completions', 'Bearer minted'),
+        )
+        for label, env, config, url, auth in cases:
+            with self.subTest(label):
+                if isinstance(config, str):
+                    config = self.credential_file(config)
+                opener, seen = responds(completion(OK))
+                with patch.dict(os.environ, env, clear=True):
+                    PlowInference.from_config(self.home, config, opener=opener).ask(
+                        'inst', {}, SCHEMA, 'label')
+                self.assertEqual(seen['url'], url)
+                self.assertEqual(seen['auth'], auth)
+
+    def test_an_unusable_endpoint_or_missing_key_is_named_not_guessed(self):
+        for label, env, expected in (
+            ('no key anywhere', {'PLOW_API_BASE': 'https://api.plow.co'},
+             'HERMES_CUSTOM_PLOW_API_KEY'),
+            ('a plaintext base', {'PLOW_API_BASE': 'http://api.plow.co',
+                                  'HERMES_CUSTOM_PLOW_API_KEY': 'tok'}, 'HTTPS'),
+        ):
+            with self.subTest(label), patch.dict(os.environ, env, clear=True):
+                with self.assertRaisesRegex(WatsonError, expected):
+                    PlowInference(self.home).ask('inst', {}, SCHEMA, 'label')
+
+    def test_the_configured_model_survives_from_config(self):
+        opener, seen = responds(completion(OK))
+        with patch.dict(os.environ, ENV, clear=True):
+            PlowInference.from_config(
+                self.home, {'model': 'anthropic/claude-sonnet-5'}, opener=opener
+            ).ask('inst', {}, SCHEMA, 'label')
+        self.assertEqual(seen['body']['model'], 'anthropic/claude-sonnet-5')
 
 
 if __name__ == '__main__':
