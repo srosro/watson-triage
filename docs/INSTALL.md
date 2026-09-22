@@ -42,13 +42,20 @@ Running locally with compose, put the **raw token** in `./watson-github` — no
 `GH_TOKEN=` prefix, nothing else in the file — and lock it down:
 
 ```sh
-printf %s 'github_pat_…' > watson-github
-sudo chown root:root watson-github && sudo chmod 600 watson-github
+sudo install -o root -g root -m 600 /dev/null watson-github
+printf %s 'github_pat_…' | sudo tee watson-github >/dev/null
 ```
 
-The `chown` is not optional. A bind mount carries the **host's** ownership, so a
-file left owned by your own account can land on uid 10000 inside the container —
-which is the agent itself, the one identity that must not have it.
+**That order matters.** Writing the token first and securing it afterwards
+leaves a `0644` file owned by your account for the moment in between — long
+enough for an already-running container with this mount, or anything else on
+the box, to read it. Creating it empty and locked first means the credential is
+never on disk unprotected.
+
+The `root:root` is not optional either. A bind mount carries the **host's**
+ownership, so a file left owned by your own account can land on uid 10000 inside
+the container — which is the agent itself, the one identity that must not have
+it. The cycle refuses to run when it detects that.
 
 It is bind-mounted read-only into the container, which is why it is a bare
 value rather than an env file: it never enters the container environment, where
