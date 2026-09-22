@@ -55,11 +55,11 @@ while :; do
   # written by strangers, and running it means doing that with a repository
   # credential the model can read. Nothing here is worth that.
   if [ -f "$STASH" ] && /command/s6-setuidgid hermes test -r "$STASH"; then
-    echo "watson-cycle: REFUSING to run -- the agent's own uid can read $STASH." >&2
-    echo "The token must be unreadable by uid 10000. On Linux:" >&2
-    echo "  sudo chown root:root watson-github && sudo chmod 600 watson-github" >&2
-    echo "Docker Desktop on macOS does not enforce mounted file modes at all," >&2
-    echo "so there is no fix there -- run the agent on a Linux host." >&2
+    echo "watson-cycle: REFUSING to run -- the agent's own uid can read $STASH," >&2
+    echo "so a prompt injection could read the GitHub token. The file must be" >&2
+    echo "root-owned on the HOST; see docs/INSTALL.md section 2. On Docker" >&2
+    echo "Desktop for macOS there is no fix -- it does not enforce mounted file" >&2
+    echo "modes at all, so run the agent on a Linux host." >&2
     /bin/sleep 600
     continue
   fi
@@ -70,11 +70,18 @@ while :; do
     # DO. This message is the recovery path, so it names the current
     # mechanism: a raw-token file mounted at $STASH, not an environment
     # variable. The hosted path waits on issue #2.
-    echo "watson-cycle: no GitHub token at $STASH -- standing down. Put the" >&2
-    echo "raw token (no GH_TOKEN= prefix) in ./watson-github beside compose.yml:" >&2
-    echo "  sudo install -o root -g root -m 600 /dev/null watson-github" >&2
-    echo "  printf %s 'github_pat_...' | sudo tee watson-github >/dev/null" >&2
-    echo "It is bind-mounted read-only here; see docs/INSTALL.md." >&2
+    # No commands here. This message is read by whoever is looking at the
+    # logs, which is not always the operator, and a recipe containing a
+    # credential is one somebody pastes with the token inline -- into their
+    # shell history, or into a ticket. It points at the doc instead, and it
+    # distinguishes the two ways to arrive here, because the fixes differ.
+    echo "watson-cycle: no GitHub token at $STASH -- standing down." >&2
+    if [ -n "$AGENT_ID" ] && [ ! -e "$STASH" ]; then
+      echo "Hosted deploy: there is no hook for this credential yet -- see" >&2
+      echo "https://github.com/srosro/watson-triage/issues/2. Nothing to fix here." >&2
+    else
+      echo "Local compose: provision it per docs/INSTALL.md section 2." >&2
+    fi
     /bin/sleep 600
     continue
   fi
