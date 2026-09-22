@@ -164,10 +164,10 @@ def cycle(home, *, model=None, github=None, writer=None):
                             data['language']=language; data['comment_draft']=body
                             data['summary']=owner_summary
                             result={**result,'summary':owner_summary}
-                            pending_comment=writer.prepare(github,issue,body,state)
+                            pending_comment=writer.prepare(store,github,run['run_id'],issue,body,state)
                     cases.save(repo,number,cursor,state,data)
                     if pending_comment:
-                        data['comment']=writer.send(store,run['run_id'],pending_comment)
+                        data['comment']=writer.send(store,pending_comment)
                     data['notification']=notify(store,channel,config,run['run_id'],issue,result,state,validation)
                     cases.save(repo,number,cursor,state,data); store.checked(repo,number)
                     if state=='closed': store.track(repo,number,False)

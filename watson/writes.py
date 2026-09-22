@@ -26,7 +26,7 @@ class GitHubWriter:
             raise WatsonError('Operação GitHub não confirmada; conferir o histórico antes de repetir.')
         return json.loads(result.stdout)
 
-    def prepare(self, github, issue, text, kind):
+    def prepare(self, store, github, run_id, issue, text, kind):
         """Everything fallible that has no side effect: the fresh read, the
         state checks, the idempotency marker.
 
@@ -45,14 +45,22 @@ class GitHubWriter:
         from .core import digest
         marker = f'{MARKER}{digest(payload)} -->'
         existing = next((c for c in fresh['comments'] if marker in c['body']), None)
+        if existing:
+            return {'existing':{'url':existing['url'],'recovered':True}}
+        # Claimed here, not in send(): it is a local write recording that a send
+        # is about to happen, and it can fail. After the checkpoint that failure
+        # advances the cursor with nothing posted -- the very loss this split
+        # exists to close.
+        key = store.claim_action(run_id, 'github_comment', payload)
         return {'payload':payload,'marker':marker,'text':text,'number':issue['number'],
-                'existing':{'url':existing['url'],'recovered':True} if existing else None}
+                'key':key,'existing':None}
 
-    def send(self, store, run_id, pending):
-        """Claim, then post. The only uncertainty left after the checkpoint."""
+    def send(self, store, pending):
+        """Post the claimed comment. The only uncertainty left after the
+        checkpoint, which is what the claim above exists to adjudicate."""
         if pending['existing']:
             return pending['existing']
-        key = store.claim_action(run_id, 'github_comment', pending['payload'])
+        key = pending['key']
         try:
             result = self.post(f'issues/{pending["number"]}/comments',
                                {'body':pending['text']+'\n\n'+pending['marker']})
@@ -65,4 +73,4 @@ class GitHubWriter:
 
     def comment(self, store, github, run_id, issue, text, kind):
         """The two phases together, for callers that do not checkpoint between."""
-        return self.send(store, run_id, self.prepare(github, issue, text, kind))
+        return self.send(store, self.prepare(store, github, run_id, issue, text, kind))

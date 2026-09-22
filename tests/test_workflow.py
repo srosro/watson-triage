@@ -128,7 +128,7 @@ class FlowTests(unittest.TestCase):
         # the fallible-but-side-effect-free half and must run BEFORE the save,
         # send() is the only uncertainty left after it.
         self.writer=Mock()
-        self.writer.prepare.return_value={'existing':None,'number':7}
+        self.writer.prepare.return_value={'existing':None,'number':7,'key':1}
         self.writer.send.return_value={'url':'https://github.com/demo/repo/issues/7#comment'}
 
     def test_wait_restart_reply_resume_and_no_duplicate(self):

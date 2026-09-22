@@ -44,7 +44,8 @@ from:
 
 ```sh
 sudo install -d -m 700 -o root -g root /etc/watson
-sudo sh -c 'umask 077; cat > /etc/watson/github'   # paste the token, then Ctrl-D
+sudo install -m 600 -o root -g root /dev/null /etc/watson/github
+sudo sh -c 'cat > /etc/watson/github'   # paste the token, then Ctrl-D
 ```
 
 Three things about that, each closing a way the first draft of these
@@ -52,6 +53,10 @@ instructions leaked:
 
 - **The token is typed into stdin, never into the command.** A token in the
   command line lands in your shell history and in the process table.
+- **The destination is created empty and `0600` first.** A redirect into an
+  existing file keeps that file's mode, so a stale permissive
+  `/etc/watson/github` would quietly take the new token — `install` replaces it
+  rather than writing through it.
 - **It lives under a root-owned `0700` directory**, created before anything is
   written into it. Writing straight to `./watson-github` let anyone who can
   write that checkout swap it for a symlink between the create and the write —
