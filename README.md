@@ -38,10 +38,20 @@ Browser validation is configured per issue. A human supplies the trusted test en
 plow-agents deploy "$(plow-agents image show watson-delltrak --jq .plow.image)" --line ln_xxx
 ```
 
-Then text the line. Watson asks for the repository, the assignee and a
-fine-grained GitHub token, and starts a cycle every ten minutes by itself. Full
-walkthrough in [docs/INSTALL.md](docs/INSTALL.md); what the image is and what it
-deliberately does not own is in [docs/cloud-variant.md](docs/cloud-variant.md).
+Then text the line. Watson asks for the repository and the assignee, and starts
+a cycle every ten minutes by itself.
+
+**It will not take a GitHub token in chat, and refuses if you offer one** — a
+token you text is in the model's context and therefore at the inference
+provider. `GH_TOKEN` is deploy-time input: under compose it comes from
+`env_file`, and the hosted `plow-agents deploy` path has no hook for it yet, so
+a hosted agent stands down until
+[#2](https://github.com/srosro/watson-triage/issues/2) lands device
+authorization. Run it under compose to use it today.
+
+Full walkthrough in [docs/INSTALL.md](docs/INSTALL.md); what the image is and
+what it deliberately does not own is in
+[docs/cloud-variant.md](docs/cloud-variant.md).
 
 ### On your own machine
 

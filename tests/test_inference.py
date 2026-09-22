@@ -34,6 +34,7 @@ def responds(body):
         seen['url'] = request.full_url
         seen['auth'] = request.get_header('Authorization')
         seen['raw'] = request.data.decode()
+        seen['headers'] = dict(request.headers)
         seen['body'] = json.loads(request.data)
         return FakeResponse(json.dumps(body).encode())
 
@@ -83,6 +84,8 @@ class InferenceTest(unittest.TestCase):
         with patch.dict(os.environ, {'GH_TOKEN': 'gh-secret'}, clear=False):
             _, seen = self.ask(completion(OK))
         self.assertNotIn('gh-secret', seen['raw'])
+        # Headers too: a credential added to one is as disclosed as one in the body.
+        self.assertNotIn('gh-secret', json.dumps(seen['headers']))
 
     def test_a_malformed_answer_fails_loudly_rather_than_crashing(self):
         # Each of these once raised AttributeError/TypeError out of a CLI
@@ -127,6 +130,9 @@ class InferenceTest(unittest.TestCase):
                            'FROM session_model_usage').fetchone()
         conn.close()
         self.assertEqual(row, (600, 40, 300))
+        # The per-label audit file is a separate observable from that database.
+        audit = json.loads((self.home / 'metered-usage.json').read_text())
+        self.assertEqual(audit['usage'][0]['prompt_tokens'], 900)
 
 
 class CredentialTest(unittest.TestCase):
