@@ -57,6 +57,11 @@ RUN set -eu; \
 #
 # No agent-index service here: the base already ships that reporter and the
 # client it runs. A variant supplies AGENT_ID and nothing else.
+# Runs before any service: moves GH_TOKEN out of the container environment,
+# which the gateway's shell can read, into a root-only file it cannot.
+COPY image/cont-init.d/ /etc/cont-init.d/
+RUN chmod 0755 /etc/cont-init.d/10-watson-stash-token
+
 COPY image/s6-overlay/ /etc/s6-overlay/
 RUN chmod 0755 /etc/s6-overlay/s6-rc.d/watson-cycle/run
 

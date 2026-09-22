@@ -44,10 +44,3 @@ The base owns these, and a copy here is a second owner that goes stale silently:
 
 This repository owns the persona, the `watson-setup` skill, the `watson-cycle`
 service, and Watson itself. That is the whole list.
-
-## The two credentials
-
-| credential | where it comes from | what reads it |
-|---|---|---|
-| Plow bearer | `plow-init`, on first boot, from the line's credential | the gateway, the index reporter, and `PlowInference` |
-| GitHub PAT | the owner, in chat, via `watson-setup` | `gh`, through `watson.github`, in the cycle service only |

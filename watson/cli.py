@@ -117,7 +117,6 @@ def main(argv=None):
             else:
                 config = load_config(args.home)
                 github = GitHub([config['repository']] + config['related_repositories'])
-                model = PlowInference.from_config(args.home, config)
                 if args.command in {'track', 'untrack'}:
                     if args.number < 1:
                         raise WatsonError('Número de issue inválido.')
@@ -126,7 +125,13 @@ def main(argv=None):
                 elif args.command == 'sync':
                     output = sync(store, github, config)
                 elif args.command == 'triage':
-                    output = triage(store, github, model, config, args.number)
+                    # Built here, not above: `status`, `show`, `sync`, `track`,
+                    # `voice` and `deliver` need no inference, and constructing
+                    # it eagerly made an absent or malformed plow_credential_file
+                    # fail commands that never touch the model.
+                    output = triage(store, github,
+                                    PlowInference.from_config(args.home, config),
+                                    config, args.number)
                 elif args.command == 'watch':
                     if not 1 <= args.limit <= 20:
                         raise WatsonError('O limite deve ficar entre 1 e 20.')
@@ -140,7 +145,9 @@ def main(argv=None):
                             store.track(config['repository'], row['number'], False)
                             output['skipped'].append({'number': row['number'], 'reason': 'Não está mais atribuída ao usuário.'})
                             continue
-                        run = triage(store, github, model, config, row['number'])
+                        run = triage(store, github,
+                                     PlowInference.from_config(args.home, config),
+                                     config, row['number'])
                         output['runs'].append({'run_id': run['run_id'], 'cached': run['cached']})
                         if fresh['state'] == 'closed':
                             store.track(config['repository'], row['number'], False)

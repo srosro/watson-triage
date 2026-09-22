@@ -57,9 +57,21 @@ def compose(model, issue, result, state, validation, private_channel, previous):
     return answer['language'], f'@{issue["author"]}\n\n{body}', answer.get('owner_summary',result['summary'])
 
 
-def notify(store, config, run_id, issue, result, state, validation):
+def owner_channel(config):
+    """Resolve the owner's chat BEFORE the cursor is saved.
+
+    A lookup failure here used to land after `cases.save()`, so the cursor was
+    already persisted and the next cycle read the issue as unchanged -- one
+    transient failure dropped that update permanently, not just once.
+    """
     if not config.get('notify_owner'): return None
-    p=Plow.from_config(config); chat=p.owner_chat()
+    plow=Plow.from_config(config)
+    return plow, plow.owner_chat()
+
+
+def notify(store, channel, run_id, issue, result, state, validation):
+    if not channel: return None
+    p, chat = channel
     labels={'waiting_access':'Aguardando acesso de teste','waiting_info':'Aguardando resposta do autor',
             'reproduced':'Problema reproduzido no teste','validated':'Cenário de teste passou',
             'blocked':'Validação bloqueada','triaged':'Triagem concluída','closed':'Issue encerrada'}
@@ -124,6 +136,8 @@ def cycle(home, *, model=None, github=None, writer=None):
                             state={'failed':'reproduced','passed':'validated'}.get(validation['status'],'blocked')
                             cases.validation(repo,number,head,validation)
                     else: state='waiting_info' if result['questions_for_author'] else 'triaged'
+                    # Resolved before the save below: see owner_channel().
+                    channel=owner_channel(config)
                     data={'run_id':run['run_id'],'summary':result['summary'],'questions':result['questions_for_author'],
                           'validation':validation,'previous_state':previous['state'] if previous else None,
                           'author':issue['author'],'head_sha':head,'at':now()}
@@ -138,7 +152,7 @@ def cycle(home, *, model=None, github=None, writer=None):
                             data['summary']=owner_summary
                             result={**result,'summary':owner_summary}
                             data['comment']=writer.comment(store,github,run['run_id'],issue,body,state)
-                    data['notification']=notify(store,config,run['run_id'],issue,result,state,validation)
+                    data['notification']=notify(store,channel,run['run_id'],issue,result,state,validation)
                     cases.save(repo,number,cursor,state,data); store.checked(repo,number)
                     if state=='closed': store.track(repo,number,False)
                     outcome['processed'].append({'number':number,'state':state,'run_id':run['run_id'],

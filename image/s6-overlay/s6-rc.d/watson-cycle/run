@@ -14,15 +14,22 @@ PATH=/command:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
 export PATH
 
 WATSON_HOME=/var/lib/hermes/watson
+STASH=/opt/plow/watson-github
 
-# GH_TOKEN comes from the container environment, which the host sets -- never
-# from a file the agent writes. Both halves of that are load-bearing. An
-# agent-written file read by this root script was arbitrary root execution one
-# prompt injection away; and a token the agent had to RECEIVE, to write that
-# file, is a repository credential disclosed to the inference provider, because
-# a texted secret is in the model's context by construction. There is no way to
-# hold the second one at arm's length once it has been said out loud, so the
-# ask never happens. See issue #2 for the hosted path's device flow.
+# The token is read here, as root, from a file the agent cannot open -- not
+# from the container environment, and not from a file the agent writes.
+#
+# All three of those are load-bearing, and each closed a different path the
+# credential took into model context. An agent-written file sourced here was
+# arbitrary root execution one prompt injection away. A token the agent had to
+# be TOLD, in order to write that file, was disclosed to the inference provider
+# the moment it was said. And a token left in the container environment is one
+# `printenv` from the gateway's shell, which shares this container.
+#
+# 10-watson-stash-token puts it at $STASH and deletes it from the environment
+# before any service starts. Residual, named in that script and in issue #2:
+# the child below runs as `hermes`, the gateway's own uid, so its /proc entry is
+# readable while a pass runs.
 cycle() {
   /command/s6-setuidgid hermes env -i \
     PATH="$PATH" HOME=/var/lib/hermes \
@@ -35,11 +42,12 @@ cycle() {
 }
 
 while :; do
+  GH_TOKEN=$(cat "$STASH" 2>/dev/null || true)
   if [ -z "$GH_TOKEN" ]; then
     # Stand down rather than guess. The token is deploy-time input: compose
     # takes it through env_file, and the hosted path waits on issue #2.
-    echo "watson-cycle: no GH_TOKEN in this container's environment -- standing" >&2
-    echo "down. Set it where this container is started (compose.yml)." >&2
+    echo "watson-cycle: no GitHub token -- standing down. Set GH_TOKEN where" >&2
+    echo "this container is started (compose.yml)." >&2
     /bin/sleep 600
     continue
   fi

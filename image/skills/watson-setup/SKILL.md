@@ -1,7 +1,7 @@
 ---
 name: watson-setup
 description: Set up Watson — which repository to watch and which login's assigned issues to read. Trigger when the owner first messages this agent, when they ask Watson to watch a repository, or when the cycle reports that it has no configuration.
-allowed-tools: Bash(/opt/hermes/.venv/bin/watson:*), Bash(/usr/local/bin/gh:*)
+allowed-tools: Bash(/opt/hermes/.venv/bin/watson:*)
 ---
 
 # Watson setup
@@ -27,19 +27,17 @@ Ask which GitHub login's assigned issues are the owner's. Usually their own.
 Watson reads only issues assigned to this login — that is the whole selection
 rule, so a wrong login means Watson sees nothing rather than too much.
 
-## 3. Check the token that is already there
+## 3. Do not go looking for the token
 
-```bash
-/usr/local/bin/gh api repos/OWNER/REPO --jq .full_name
-```
+You have no `gh` here, deliberately. The deploy-time credential is held in a
+root-only file the cycle service reads, and it is not yours to fetch, echo, or
+check — a credential you can reach is a credential that can end up in this
+conversation, and from there at the inference provider.
 
-The repository's name back means the deploy-time token reaches it. An auth
-failure means the container was started without a usable `GH_TOKEN` — tell the
-owner that, and that it is fixed where the agent is deployed, not here.
-
-A token that reads the repository but is short a permission surfaces on the
-first cycle, in that cycle's own error — report that error verbatim and name
-the permission it asks for.
+If the owner asks whether the token works, the honest answer is that the first
+cycle will say so: an auth failure surfaces in that cycle's own error, which you
+can read and report. Until then you do not know, and saying otherwise would be
+a guess.
 
 ## 4. Initialise
 

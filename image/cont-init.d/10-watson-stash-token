@@ -1,0 +1,38 @@
+#!/bin/sh
+# Move GH_TOKEN out of the container environment into a root-only file.
+#
+# Plain /bin/sh, as the base's own cont-init is: this reads the environment
+# FILES rather than the environment, so with-contenv would add an execline
+# dependency for nothing -- and it is what must delete one of those files.
+#
+# The Hermes gateway and the watson-cycle service share this container, and the
+# gateway is a model with a shell. Anything in the container environment is
+# therefore in reach of a prompt injection -- and Watson's whole job is reading
+# issue text written by strangers. A repository credential sitting in `env` is
+# one `printenv` away from the model's context and from there the inference
+# provider.
+#
+# So the value is copied to a file the agent cannot open (0600 root:root,
+# under /opt/plow, outside every home) and DELETED from the environment s6
+# publishes. The cycle service is root when it reads that file back.
+#
+# Residual, stated rather than implied: the cycle still hands the token to a
+# child running as `hermes`, the same uid as the gateway, so /proc/<pid>/environ
+# is readable by the agent while a pass is running. Closing that needs the
+# cycle to run as its own uid, which means the agent can no longer write
+# Watson's home -- a product change, not a patch. Tracked in issue #2.
+set -eu
+
+ENVDIR=/run/s6/container_environment
+STASH=/opt/plow/watson-github
+
+[ -s "$ENVDIR/GH_TOKEN" ] || exit 0
+
+install -d -m 0755 /opt/plow
+umask 077
+cp "$ENVDIR/GH_TOKEN" "$STASH"
+chown root:root "$STASH"
+chmod 0600 "$STASH"
+rm -f "$ENVDIR/GH_TOKEN"
+
+echo "watson: GH_TOKEN stashed root-only and removed from the container environment" >&2

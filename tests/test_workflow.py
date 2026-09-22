@@ -18,6 +18,32 @@ class Model(FakeModel):
             return {'language':'en','body':'Please provide a test account through the private channel. Do not post credentials here.'}
         return super().ask(instruction,payload,schema,label)
 
+class OwnerChannelTests(unittest.TestCase):
+    def test_a_chat_lookup_failure_leaves_the_update_retryable(self):
+        # The cursor is persisted before the send, deliberately, so an
+        # uncertain send is never blindly replayed. That made a PRE-send
+        # lookup failure permanent: the cursor was already saved and the next
+        # cycle read the issue as unchanged. Resolving the chat first is what
+        # keeps a transient failure costing one pass instead of the update.
+        from watson.workflow import owner_channel
+
+        class Unreachable:
+            @classmethod
+            def from_config(cls, config):
+                return cls()
+
+            def owner_chat(self):
+                raise WatsonError('sem chat')
+
+        with patch('watson.workflow.Plow', Unreachable):
+            with self.assertRaises(WatsonError):
+                owner_channel({'notify_owner': True})
+
+    def test_a_quiet_agent_resolves_no_channel(self):
+        from watson.workflow import owner_channel
+        self.assertIsNone(owner_channel({'notify_owner': False}))
+
+
 class FlowTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)

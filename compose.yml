@@ -12,8 +12,13 @@ services:
         required: false
       # The owner's GitHub token, as one GH_TOKEN=… line. Deploy-time input,
       # never something the agent is told in chat: a texted token is in the
-      # model's context and therefore at the inference provider. The cycle
-      # service stands down, loudly, when it is absent.
+      # model's context and therefore at the inference provider.
+      #
+      # It does not stay in the environment. 10-watson-stash-token moves it to
+      # a root-only file before any service starts and deletes it from here --
+      # the gateway shares this container and has a shell, so an env var is one
+      # `printenv` from the model. The cycle service stands down, loudly, when
+      # it is absent.
       - path: ./watson-github
         required: false
     volumes:
