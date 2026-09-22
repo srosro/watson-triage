@@ -172,6 +172,33 @@ class InferenceTest(unittest.TestCase):
         with self.assertRaises(WatsonError):
             self.ask(opener)
 
+    def test_a_non_object_usage_block_does_not_crash(self):
+        def opener(request, timeout=None):
+            return FakeResponse(json.dumps({
+                'choices': [{'message': {'content': '{"answer": "ok"}'}}],
+                'usage': 'unexpected'}).encode())
+
+        self.assertEqual(self.ask(opener), {'answer': 'ok'})
+
+    def test_a_credential_file_pins_its_own_endpoint(self):
+        # The base travels with the token it was validated beside; falling
+        # through to the environment would send a file-backed credential to
+        # whatever host PLOW_API_BASE happened to name.
+        credential = self.home / 'plow-credentials'
+        credential.write_text('PLOW_AGENT_TOKEN=minted\n')
+        seen = {}
+
+        def opener(request, timeout=None):
+            seen['url'] = request.full_url
+            return completion('{"answer": "ok"}')
+
+        with patch.dict(os.environ, {'PLOW_API_BASE': 'https://elsewhere.example'},
+                        clear=True):
+            PlowInference.from_config(
+                self.home, {'plow_credential_file': str(credential)}, opener=opener
+            ).ask('inst', {}, SCHEMA, 'label')
+        self.assertEqual(seen['url'], 'https://api.plow.co/v1/chat/completions')
+
     def test_a_malformed_usage_block_does_not_crash(self):
         def opener(request, timeout=None):
             return FakeResponse(json.dumps({

@@ -1,7 +1,7 @@
 ---
 name: watson-setup
 description: Set up or repair Watson's GitHub access — which repository to watch, which login's assigned issues to read, and the token to read them with. Trigger when the owner first messages this agent, when they ask Watson to watch a repository, or when the cycle reports that it has no configuration or no GitHub token.
-allowed-tools: Bash(/opt/hermes/.venv/bin/watson:*), Bash(/opt/plow/watson-store-token:*), Bash(/usr/local/bin/gh:*)
+allowed-tools: Bash(/opt/hermes/.venv/bin/watson:*), Bash(/usr/local/bin/gh:*)
 ---
 
 # Watson setup
@@ -50,20 +50,34 @@ a commit and a ref before it opens the pull request, so pull-request access
 alone cannot complete one. Point the owner at
 <https://github.com/settings/personal-access-tokens/new>.
 
-Store it by piping it to the helper, which reads stdin, checks the shape, and
-writes `0600`:
+Write it with your own file-writing tool — not a shell command — to
+`/var/lib/hermes/watson/.env`, as exactly this one line and nothing else:
 
-```bash
-printf %s 'THE_TOKEN' | /opt/plow/watson-store-token
+```
+GH_TOKEN=THE_TOKEN
 ```
 
-It prints `stored`, never the token. Do not echo the token back to the owner,
-do not put it in a GitHub comment, and do not repeat it for confirmation.
+**A shell command would put the token in that shell's `/proc/…/cmdline`, where
+anything else in the container can read it for the lifetime of the process.**
+Your file-writing tool has no such argv. Nothing quotes or escapes the value,
+because the reader parses this file with `sed` and never evaluates it — a line
+of shell here is a string, not a command.
 
-Confirm by what it can reach:
+The directory is already `0700`-equivalent: it sits inside a home owned
+`root:hermes` mode `3770`, so only this agent and root can traverse it.
+
+Do not echo the token back to the owner, do not put it in a GitHub comment, and
+do not repeat it for confirmation. Be straight with them about one thing: they
+texted it, so it is in this conversation's history by construction. If that
+matters to them, say they can revoke it on GitHub and send a fresh one at any
+time.
+
+Confirm by what it can reach. The token is in a file, not in your environment,
+so load it for this one command — by parsing, never by sourcing:
 
 ```bash
-/usr/local/bin/gh api repos/OWNER/REPO --jq .full_name
+GH_TOKEN=$(sed -n 's/^GH_TOKEN=//p' /var/lib/hermes/watson/.env | head -n 1) \
+  /usr/local/bin/gh api repos/OWNER/REPO --jq .full_name
 ```
 
 The repository's name back means the token reaches the repository. If it fails,

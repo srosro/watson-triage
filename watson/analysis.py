@@ -75,9 +75,17 @@ class PlowInference:
         install with working delivery and a failure on every triage.
         """
         values = credential_values(config)
+        if not values:
+            return cls(home, config.get('model'), **kwargs)
+        # The base travels with the token it was validated beside. Leaving it
+        # None fell through to PLOW_API_BASE from the environment, which would
+        # send a file-backed credential to whatever host that named -- and put
+        # inference on a different endpoint than delivery, which has always
+        # pinned this one.
         return cls(home, config.get('model'),
-                   token=values.get('PLOW_AGENT_TOKEN'),
-                   base=values.get('PLOW_API_BASE'), **kwargs)
+                   token=values['PLOW_AGENT_TOKEN'],
+                   base=values.get('PLOW_API_BASE', 'https://api.plow.co'),
+                   **kwargs)
 
     def _credentials(self):
         base = (self.base or os.environ.get('PLOW_API_BASE')
@@ -120,7 +128,9 @@ class PlowInference:
             raise WatsonError('A inferência do Plow não respondeu; tente novamente.') from None
         if not isinstance(answer, dict):
             raise WatsonError('A inferência do Plow retornou uma resposta inválida.')
-        usage = answer.get('usage') or {}
+        usage = answer.get('usage')
+        if not isinstance(usage, dict):
+            usage = {}
         audit = {'at': now(), 'label': label, 'usage': [usage]}
         private_json(self.home / f'{label}-usage.json', audit)
         from .metrics import record_usage
