@@ -42,20 +42,26 @@ cycle() {
 }
 
 while :; do
-  # Measured, not assumed: a bind mount's mode is enforced by the host's
-  # filesystem, and Docker Desktop on macOS does not enforce it -- the file
-  # reports root:root 0600 to `stat` and uid 10000 reads it anyway. That is a
-  # guard which looks correct and is not, so it gets checked by doing rather
-  # than by reading the mode. Linux enforces it, which is where this deploys.
+  # Tested by doing, not by reading the mode. A bind mount's permissions are
+  # the HOST's, and two ordinary situations hand the token to the agent with
+  # `stat` still reporting root:root 0600:
   #
-  # A warning rather than a refusal: on a developer's own Mac the exposure is
-  # to their own agent, which already talks to them. Refusing would block the
-  # one path that works today over a bounded local risk.
+  #   - Docker Desktop on macOS does not enforce the mode at all;
+  #   - a Linux host whose operator uid happens to be 10000 maps the file onto
+  #     `hermes` itself, where 0600 is exactly the wrong owner.
+  #
+  # The second is a real deployment, not a developer's laptop, which is why
+  # this refuses rather than warns: the cycle's whole job is reading issue text
+  # written by strangers, and running it means doing that with a repository
+  # credential the model can read. Nothing here is worth that.
   if [ -f "$STASH" ] && /command/s6-setuidgid hermes test -r "$STASH"; then
-    echo "watson-cycle: WARNING -- the agent's own uid can read $STASH. Your" >&2
-    echo "container runtime is not enforcing the file's mode (Docker Desktop on" >&2
-    echo "macOS does not). The token is readable by the model's shell. Fine for" >&2
-    echo "local development, not for anything you care about." >&2
+    echo "watson-cycle: REFUSING to run -- the agent's own uid can read $STASH." >&2
+    echo "The token must be unreadable by uid 10000. On Linux:" >&2
+    echo "  sudo chown root:root watson-github && sudo chmod 600 watson-github" >&2
+    echo "Docker Desktop on macOS does not enforce mounted file modes at all," >&2
+    echo "so there is no fix there -- run the agent on a Linux host." >&2
+    /bin/sleep 600
+    continue
   fi
 
   GH_TOKEN=$(cat "$STASH" 2>/dev/null || true)

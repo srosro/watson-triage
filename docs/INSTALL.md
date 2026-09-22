@@ -42,20 +42,28 @@ Running locally with compose, put the **raw token** in `./watson-github` — no
 `GH_TOKEN=` prefix, nothing else in the file — and lock it down:
 
 ```sh
-printf %s 'github_pat_…' > watson-github && chmod 600 watson-github
+printf %s 'github_pat_…' > watson-github
+sudo chown root:root watson-github && sudo chmod 600 watson-github
 ```
+
+The `chown` is not optional. A bind mount carries the **host's** ownership, so a
+file left owned by your own account can land on uid 10000 inside the container —
+which is the agent itself, the one identity that must not have it.
 
 It is bind-mounted read-only into the container, which is why it is a bare
 value rather than an env file: it never enters the container environment, where
 the agent's own shell could read it.
 
-**One caveat, measured rather than assumed.** A bind mount's permissions are
-enforced by the host's filesystem. Linux enforces them, so `root:root 0600`
-means the agent cannot open the file. **Docker Desktop on macOS does not** — the
-file reports `0600` to `stat` and the agent reads it anyway. The cycle warns
-loudly when it detects this. It is fine for local development, where the
-exposure is to your own agent on your own machine; do not treat a Mac compose
-run as isolated.
+**The cycle checks this by doing it, and refuses to run if it fails.** On every
+pass it tries to read the token as uid 10000; if that succeeds it stops and
+tells you why, rather than triaging attacker-written issue text with a
+credential the model can reach.
+
+Two ordinary situations trip it with `stat` still reporting `root:root 0600`:
+**Docker Desktop on macOS** does not enforce mounted file modes at all — there
+is no fix there, run the agent on a Linux host — and a **Linux host whose own
+uid is 10000** maps the file onto `hermes`, where `0600` is precisely the wrong
+owner.
 
 On the hosted path, `plow-agents deploy` injects only the `PLOW_*` variables, so
 there is no hook for this yet and the agent stands down with "no GH_TOKEN"
