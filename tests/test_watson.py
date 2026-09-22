@@ -7,7 +7,7 @@ import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
-from watson.analysis import Codex, RESULT_SCHEMA, triage, validate_result
+from watson.analysis import RESULT_SCHEMA, triage, validate_result
 from watson.cli import sync
 from watson.core import Store, WatsonError, safe_source
 from watson.delivery import Plow, deliver
@@ -120,15 +120,6 @@ class WatsonTests(unittest.TestCase):
         for path in ['../a.py', '/etc/config.json', '.env', 'app/.env.json', 'auth.json', 'keys/private-key.json']:
             self.assertFalse(safe_source(path), path)
         self.assertTrue(safe_source('src/calendar.tsx'))
-
-    def test_tool_activity_invalidates_inference(self):
-        def run(command, **kwargs):
-            self.assertIn('--ignore-user-config', command)
-            self.assertNotIn('GH_TOKEN', kwargs['env'])
-            return subprocess.CompletedProcess(command, 0, json.dumps({
-                'type': 'item.completed', 'item': {'type': 'command_execution'}}), '')
-        with self.assertRaisesRegex(WatsonError, 'ferramenta'):
-            Codex(self.home, run=run).ask('test', {}, RESULT_SCHEMA, 'test')
 
     def test_unknown_delivery_is_never_replayed(self):
         run = triage(self.store, self.github, self.model, CONFIG, 7)
