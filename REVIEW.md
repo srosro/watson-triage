@@ -44,9 +44,13 @@ prototype. The bottleneck is getting one image to boot and report, not scale.
 - **Security findings must name a practical, currently-reachable loss.** State the
   concrete loss in access or data if it fires today. No nameable loss beyond a
   bounded one → at most `[low]`, question-voiced.
-- **Watson never merges.** Anything that can merge a PR, force-push, or write
-  outside a draft PR and an issue comment is `[blocking]` regardless of how it is
-  gated.
+- **Watson never merges.** On **GitHub**, anything that can merge a PR,
+  force-push, or write outside a draft PR and an issue comment is `[blocking]`
+  regardless of how it is gated. This is about GitHub only: delivering an update
+  to the owner over Plow/iMessage is the product working, not a write to flag —
+  `notify()` is gated on the owner's own `notify_owner` setting, and reading a
+  general "no writes" rule onto it would have a reviewer reject the feature the
+  agent exists to provide.
 
 ## Update cadence
 
