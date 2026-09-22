@@ -52,6 +52,35 @@ class OwnerChannelTests(unittest.TestCase):
         self.assertIsNone(Cases(store).get('demo/repo', 7),
                           'cursor was saved despite the failed lookup — the update is now lost')
 
+    def test_a_validated_run_notifies_without_crashing(self):
+        # notify() reads config for send_video, and only on the validation
+        # branch -- so dropping that parameter raised NameError on exactly the
+        # path no test drove, after the cursor had already been saved. The
+        # update was then permanently suppressed.
+        from watson.workflow import notify
+
+        sent = []
+
+        class FakePlow:
+            def send(self, chat, body, media):
+                sent.append((chat, body, media))
+                return {'uid': 'receipt'}
+
+        store = Store(self.home)
+        self.addCleanup(store.db.close)
+        validation = {'status': 'failed', 'video': '/tmp/none.mp4',
+                      'steps': [{'status': 'failed', 'expected': 'ok', 'actual': 'boom'}]}
+        result = {'summary': 'resumo'}
+        receipt = notify(store, (FakePlow(), 'chat'), {'notify_owner': True},
+                         1, ISSUE, result, 'reproduced', validation)
+        self.assertIsNotNone(receipt)
+        chat, body, media = sent[0]
+        self.assertEqual(chat, 'chat')
+        self.assertIn('Esperado: ok', body)
+        self.assertIn('Observado: boom', body)
+        # send_video is absent from config, so no media rides along.
+        self.assertIsNone(media)
+
     def test_a_quiet_agent_resolves_no_channel(self):
         from watson.workflow import owner_channel
         self.assertIsNone(owner_channel({'notify_owner': False}))

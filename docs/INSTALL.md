@@ -38,11 +38,24 @@ Create a **fine-grained PAT** scoped to the repository, with **Issues: read**,
 draft PR, so pull-request access alone cannot complete one. Create one at
 <https://github.com/settings/personal-access-tokens/new>.
 
-Running locally with compose, put it in `./watson-github` as one line:
+Running locally with compose, put the **raw token** in `./watson-github` — no
+`GH_TOKEN=` prefix, nothing else in the file — and lock it down:
 
+```sh
+printf %s 'github_pat_…' > watson-github && chmod 600 watson-github
 ```
-GH_TOKEN=github_pat_…
-```
+
+It is bind-mounted read-only into the container, which is why it is a bare
+value rather than an env file: it never enters the container environment, where
+the agent's own shell could read it.
+
+**One caveat, measured rather than assumed.** A bind mount's permissions are
+enforced by the host's filesystem. Linux enforces them, so `root:root 0600`
+means the agent cannot open the file. **Docker Desktop on macOS does not** — the
+file reports `0600` to `stat` and the agent reads it anyway. The cycle warns
+loudly when it detects this. It is fine for local development, where the
+exposure is to your own agent on your own machine; do not treat a Mac compose
+run as isolated.
 
 On the hosted path, `plow-agents deploy` injects only the `PLOW_*` variables, so
 there is no hook for this yet and the agent stands down with "no GH_TOKEN"
@@ -59,7 +72,8 @@ Text the number `plow-agents lines` showed. Watson asks for two things:
   the whole selection rule, so a wrong login means Watson sees nothing rather
   than too much.
 
-It checks the deploy-time token by reading the repository's name back.
+It does not check the token — it has no access to one, deliberately. The first
+supervised cycle is what proves it, and an auth failure surfaces there.
 
 ## 4. What happens next
 

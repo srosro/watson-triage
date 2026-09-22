@@ -10,13 +10,13 @@ services:
     env_file:
       - path: ./plow-credentials
         required: false
-      # The owner's GitHub token, as one GH_TOKEN=… line; see docs/INSTALL.md.
-      # It does not stay in the environment -- 10-watson-stash-token moves it
-      # to a root-only file before any service starts and deletes it from here,
-      # because the gateway shares this container and has a shell.
-      - path: ./watson-github
-        required: false
     volumes:
+      # The owner's GitHub token: the raw value, no KEY= prefix, `chmod 600`.
+      # Mounted rather than passed through env_file so it never enters the
+      # container environment at all -- the gateway shares this container and
+      # has a shell, so anything in that environment is one `printenv` from the
+      # model. Read-only, and only root reads it. See docs/INSTALL.md.
+      - ./watson-github:/opt/plow/watson-github:ro
       # The agent's home, kept across `up`/`down` for its sessions and setup.
       # `docker compose down -v` starts this agent fresh, and is what an edit
       # to SOUL.md needs before the agent sees it.

@@ -54,19 +54,23 @@ silence, so leave it on unless the owner asks for a quiet agent.
 the owner wants a different repository, tell them that is a new agent rather
 than an edit, and stop.
 
-## 5. Baseline
+## 5. Tell them what happens next
 
-```bash
-/opt/hermes/.venv/bin/watson --home /var/lib/hermes/watson sync
-```
+Do **not** run `watson sync` yourself — you have no token, by design, and it is
+the one setup command that needs one. The supervised cycle runs it on its next
+pass, which is also where an unusable token first shows itself.
 
-The first sync records a baseline and deliberately does **not** work through the
-backlog. Say so plainly: issues assigned from now on are picked up on their own,
-and anything already open has to be named.
+Say plainly what that means: the first pass records a baseline and deliberately
+does **not** work through the backlog. Issues assigned from then on are picked
+up on their own, every ten minutes. Anything already open has to be named:
 
 ```bash
 /opt/hermes/.venv/bin/watson --home /var/lib/hermes/watson track 123
 ```
 
-Then tell them the cycle runs by itself every ten minutes, and they will hear
-from you when an issue actually moves — not on a schedule.
+`track` is a local record, so it works without a token — the next cycle is what
+goes and reads the issue.
+
+Then tell them they will hear from you when an issue actually moves, not on a
+schedule. If the first cycle reports an auth failure, read it back to them
+verbatim: that is the deploy-time token, fixed where the agent is started.

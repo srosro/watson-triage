@@ -16,20 +16,20 @@ export PATH
 WATSON_HOME=/var/lib/hermes/watson
 STASH=/opt/plow/watson-github
 
-# The token is read here, as root, from a file the agent cannot open -- not
-# from the container environment, and not from a file the agent writes.
+# The token is read here, as root, from a file mounted read-only at $STASH --
+# never from the container environment, and never from a file the agent writes.
 #
 # All three of those are load-bearing, and each closed a different path the
 # credential took into model context. An agent-written file sourced here was
 # arbitrary root execution one prompt injection away. A token the agent had to
 # be TOLD, in order to write that file, was disclosed to the inference provider
-# the moment it was said. And a token left in the container environment is one
-# `printenv` from the gateway's shell, which shares this container.
+# the moment it was said. And a token in the container environment is one
+# `printenv` from the gateway's shell, which shares this container -- which is
+# why it is mounted rather than passed through `env_file`: it never enters that
+# environment at all, so nothing has to remember to remove it.
 #
-# 10-watson-stash-token puts it at $STASH and deletes it from the environment
-# before any service starts. Residual, named in that script and in issue #2:
-# the child below runs as `hermes`, the gateway's own uid, so its /proc entry is
-# readable while a pass runs.
+# Residual, named here and in issue #2: the child below runs as `hermes`, the
+# gateway's own uid, so its /proc entry is readable while a pass runs.
 cycle() {
   /command/s6-setuidgid hermes env -i \
     PATH="$PATH" HOME=/var/lib/hermes \
@@ -42,6 +42,22 @@ cycle() {
 }
 
 while :; do
+  # Measured, not assumed: a bind mount's mode is enforced by the host's
+  # filesystem, and Docker Desktop on macOS does not enforce it -- the file
+  # reports root:root 0600 to `stat` and uid 10000 reads it anyway. That is a
+  # guard which looks correct and is not, so it gets checked by doing rather
+  # than by reading the mode. Linux enforces it, which is where this deploys.
+  #
+  # A warning rather than a refusal: on a developer's own Mac the exposure is
+  # to their own agent, which already talks to them. Refusing would block the
+  # one path that works today over a bounded local risk.
+  if [ -f "$STASH" ] && /command/s6-setuidgid hermes test -r "$STASH"; then
+    echo "watson-cycle: WARNING -- the agent's own uid can read $STASH. Your" >&2
+    echo "container runtime is not enforcing the file's mode (Docker Desktop on" >&2
+    echo "macOS does not). The token is readable by the model's shell. Fine for" >&2
+    echo "local development, not for anything you care about." >&2
+  fi
+
   GH_TOKEN=$(cat "$STASH" 2>/dev/null || true)
   if [ -z "$GH_TOKEN" ]; then
     # Stand down rather than guess. The token is deploy-time input: compose

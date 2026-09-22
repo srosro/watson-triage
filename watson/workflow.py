@@ -69,7 +69,7 @@ def owner_channel(config):
     return plow, plow.owner_chat()
 
 
-def notify(store, channel, run_id, issue, result, state, validation):
+def notify(store, channel, config, run_id, issue, result, state, validation):
     if not channel: return None
     p, chat = channel
     labels={'waiting_access':'Aguardando acesso de teste','waiting_info':'Aguardando resposta do autor',
@@ -152,7 +152,7 @@ def cycle(home, *, model=None, github=None, writer=None):
                             data['summary']=owner_summary
                             result={**result,'summary':owner_summary}
                             data['comment']=writer.comment(store,github,run['run_id'],issue,body,state)
-                    data['notification']=notify(store,channel,run['run_id'],issue,result,state,validation)
+                    data['notification']=notify(store,channel,config,run['run_id'],issue,result,state,validation)
                     cases.save(repo,number,cursor,state,data); store.checked(repo,number)
                     if state=='closed': store.track(repo,number,False)
                     outcome['processed'].append({'number':number,'state':state,'run_id':run['run_id'],
