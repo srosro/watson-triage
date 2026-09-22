@@ -31,25 +31,53 @@ Browser validation is configured per issue. A human supplies the trusted test en
 
 ## Install
 
-Requires Python 3.11+, GitHub CLI, and Codex CLI. Browser recording requires the optional browser dependencies. Docker is needed only for isolated repair tests.
+### On Plow, in one click
 
 ```sh
-git clone https://github.com/delltrak/watson-triage.git
+plow-agents deploy ghcr.io/srosro/watson-triage@sha256:<digest> --line ln_xxx
+```
+
+Then text the line. Watson asks for the repository, the assignee and a
+fine-grained GitHub token, and starts a cycle every ten minutes by itself. Full
+walkthrough in [docs/INSTALL.md](docs/INSTALL.md); what the image is and what it
+deliberately does not own is in [docs/cloud-variant.md](docs/cloud-variant.md).
+
+### On your own machine
+
+Requires Python 3.11+, GitHub CLI, and a Plow credential for inference. Browser
+recording requires the optional browser dependencies. Docker is needed only for
+isolated repair tests.
+
+```sh
+git clone https://github.com/srosro/watson-triage.git
 cd watson-triage
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[browser]'
 .venv/bin/python -m playwright install chromium
 gh auth login
-codex login
+plow-agents mint ln_xxx --credential-file ./plow-credentials
+set -a; . ./plow-credentials; set +a
 .venv/bin/watson --home .watson init --repo owner/repo --assignee your-login --delivery text
 .venv/bin/watson --home .watson sync
 .venv/bin/watson --home .watson track 123
 .venv/bin/watson --home .watson cycle
 ```
 
-The initial sync records a baseline without processing the entire backlog. Explicitly track existing issues. Later assignments are tracked automatically. `cycle` performs one bounded round; use a local supervisor/scheduler to run it periodically. The owner's pilot uses a Codex heartbeat; installation does not silently install a daemon.
+Inference reads `PLOW_API_BASE` and `HERMES_CUSTOM_PLOW_API_KEY` (falling back
+to `PLOW_AGENT_TOKEN`) from the environment, which is what sourcing the minted
+credential above supplies. There is no `codex login` step: Codex was the
+inference backend until this fork replaced it, and nothing in Watson shells out
+to it any more.
 
-By default, GitHub comments, owner delivery and repairs are disabled. Enable only the capabilities you want in the private `.watson/config.json`:
+The initial sync records a baseline without processing the entire backlog.
+Explicitly track existing issues. Later assignments are tracked automatically.
+`cycle` performs one bounded round; locally, use a supervisor or scheduler to
+run it periodically. Installation does not silently install a daemon — on Plow,
+the image's own `watson-cycle` service is that scheduler, and it is visible in
+the Dockerfile.
+
+By default, GitHub comments, owner delivery and repairs are disabled. Enable
+only the capabilities you want in the private `.watson/config.json`:
 
 ```json
 {
