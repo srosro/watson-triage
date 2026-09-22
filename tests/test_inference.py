@@ -34,7 +34,9 @@ def responds(body):
         seen['url'] = request.full_url
         seen['auth'] = request.get_header('Authorization')
         seen['raw'] = request.data.decode()
-        seen['headers'] = dict(request.headers)
+        # header_items(), not .headers: the latter omits unredirected_hdrs,
+        # which is exactly where urllib keeps an Authorization header.
+        seen['headers'] = dict(request.header_items())
         seen['body'] = json.loads(request.data)
         return FakeResponse(json.dumps(body).encode())
 
@@ -132,7 +134,9 @@ class InferenceTest(unittest.TestCase):
         self.assertEqual(row, (600, 40, 300))
         # The per-label audit file is a separate observable from that database.
         audit = json.loads((self.home / 'metered-usage.json').read_text())
-        self.assertEqual(audit['usage'][0]['prompt_tokens'], 900)
+        self.assertEqual(audit['usage'][0], {
+            'prompt_tokens': 900, 'completion_tokens': 40,
+            'prompt_tokens_details': {'cached_tokens': 300}})
 
 
 class CredentialTest(unittest.TestCase):
