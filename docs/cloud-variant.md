@@ -22,22 +22,13 @@ out of `~/.codex/auth.json`. The container configures no `browser_profiles`, so
 you want the recorded evidence.
 
 **The owner's GitHub token is deploy-time input, never something the agent is
-told.** A token the owner texts is in the model's context by construction, and
-therefore at the inference provider — a repository credential disclosed to a
-third party. No file mode or parsing discipline reaches that, because the
-disclosure happens before anything is written down, so the ask never happens:
-`watson-setup` refuses a token even when offered.
-
-The cycle service takes `GH_TOKEN` from the container environment, which the
-host sets. Compose supplies it through `env_file` (`./watson-github`). The
-hosted `plow-agents deploy` path injects only `PLOW_*`, so a hosted Watson
-stands down, loudly, until [issue #2](https://github.com/srosro/watson-triage/issues/2)
-lands GitHub device authorization — where the owner gets a short code and a URL,
-neither of which is a secret, and the token is minted straight to the agent.
-
-Reading it from the environment rather than a file the agent writes is the other
-half. This service is root until `s6-setuidgid`; an agent-written file sourced
-here was arbitrary root execution one prompt injection away.
+told.** [docs/INSTALL.md](INSTALL.md#2-give-it-a-github-token--at-deploy-time-not-in-chat)
+owns the rule and the reason; what matters here is the mechanism. The cycle
+service takes `GH_TOKEN` from the container environment, which the host sets --
+not from a file the agent writes. This service is root until `s6-setuidgid`, so
+an agent-written file sourced here was arbitrary root execution one prompt
+injection away, and the agent could only have written it after being told a
+secret it should never have been told.
 
 ## What this repository must not own
 
