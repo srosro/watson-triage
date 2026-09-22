@@ -8,3 +8,8 @@ __pycache__
 plow-credentials
 auth.json
 tests
+
+.watson/
+.venv/
+plow-credentials
+docs/superpowers/
