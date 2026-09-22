@@ -66,10 +66,15 @@ while :; do
 
   GH_TOKEN=$(cat "$STASH" 2>/dev/null || true)
   if [ -z "$GH_TOKEN" ]; then
-    # Stand down rather than guess. The token is deploy-time input: compose
-    # takes it through env_file, and the hosted path waits on issue #2.
-    echo "watson-cycle: no GitHub token -- standing down. Set GH_TOKEN where" >&2
-    echo "this container is started (compose.yml)." >&2
+    # Stand down rather than guess -- and say the thing the operator has to
+    # DO. This message is the recovery path, so it names the current
+    # mechanism: a raw-token file mounted at $STASH, not an environment
+    # variable. The hosted path waits on issue #2.
+    echo "watson-cycle: no GitHub token at $STASH -- standing down. Put the" >&2
+    echo "raw token (no GH_TOKEN= prefix) in ./watson-github beside compose.yml:" >&2
+    echo "  sudo install -o root -g root -m 600 /dev/null watson-github" >&2
+    echo "  printf %s 'github_pat_...' | sudo tee watson-github >/dev/null" >&2
+    echo "It is bind-mounted read-only here; see docs/INSTALL.md." >&2
     /bin/sleep 600
     continue
   fi

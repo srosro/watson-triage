@@ -21,16 +21,25 @@ out of `~/.codex/auth.json`. The container configures no `browser_profiles`, so
 `voice` and `deliver --audio` are explicit commands. Run Watson on your Mac when
 you want the recorded evidence.
 
-**The owner's GitHub token is kept out of the agent's long-lived reach —
-not out of it absolutely.**
+**The owner's GitHub token never enters the container's environment.**
 [docs/INSTALL.md](INSTALL.md#2-give-it-a-github-token--at-deploy-time-not-in-chat)
-owns the contract; `image/cont-init.d/10-watson-stash-token` owns the mechanism
-and states its one residual, which this page will not overstate away: the
-gateway shares this container and has a shell, so the token is moved to a
-root-only file and deleted from the environment before any service starts —
-but the cycle's child runs as the gateway's own uid, so `/proc/<pid>/environ`
-is readable for the seconds a pass takes. Closing that needs a separate uid,
-which is a product change and is tracked in
+owns the operator contract. The mechanism is a read-only bind mount: the raw
+token sits at `/opt/plow/watson-github`, owned `root:root 0600`, and the cycle
+service reads it as root before dropping privileges. Nothing puts it in the
+environment, so nothing has to remember to take it out — the gateway shares this
+container and has a shell, and anything in that environment is one `printenv`
+from the model.
+
+A bind mount's permissions are the **host's**, so the cycle does not trust the
+reported mode: every pass tries to read the file as uid 10000 and **refuses to
+run** if that succeeds. Two ordinary setups trip it — Docker Desktop on macOS,
+which does not enforce mounted modes at all, and a Linux host whose own uid is
+10000, where `0600` lands on `hermes` itself.
+
+The residual this page will not overstate away: the cycle hands the token to a
+child running as `hermes`, the gateway's own uid, so `/proc/<pid>/environ` is
+readable for the seconds a pass takes. Closing that needs a separate uid, which
+is a product change, tracked in
 [issue #2](https://github.com/srosro/watson-triage/issues/2).
 
 ## What this repository must not own
