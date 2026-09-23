@@ -174,10 +174,13 @@ def cycle(home, *, model=None, github=None, writer=None):
                     outcome['processed'].append({'number':number,'state':state,'run_id':run['run_id'],
                                                 'comment':data.get('comment'),'notification':data.get('notification')})
                 except Exception as exc:
-                    # Anything this issue staged and did not commit dies with
-                    # it. The connection is shared across the loop, so an
-                    # uncommitted row left here would be published by the next
-                    # issue's commit.
+                    # The single owner of transaction rollback. Anything this
+                    # issue staged and did not commit dies with it: the
+                    # connection is shared across the loop, SQLite does not
+                    # auto-abort for most statement errors, and an uncommitted
+                    # claim left here would be published by the NEXT issue's
+                    # commit -- landing with no cursor, which is the
+                    # stuck-forever state cases.save() exists to prevent.
                     store.db.rollback()
                     outcome['errors'].append({'number':number,'error':str(exc)[:500]})
     finally: store.db.close()

@@ -125,26 +125,28 @@ class OwnerChannelTests(unittest.TestCase):
         self.assertEqual(committed, 1)
         self.assertIsNotNone(cases.get('demo/repo', 7))
 
-    def test_a_failed_save_takes_the_staged_claim_down_with_it(self):
-        # The guarantee has to hold on the FAILURE path. SQLite does not
-        # auto-abort for most statement errors, and the cycle keeps using this
-        # connection across issues -- so a staged claim that survives a failed
-        # save rides the next issue's commit and lands with no cursor.
+    def test_a_failed_issue_leaves_no_claim_for_the_next_one_to_publish(self):
+        # Driven through cycle(), not through Cases.save directly: rollback is
+        # the cycle's per-issue contract, and a test that called save() by hand
+        # would pin an owner that no longer exists. The hazard is real either
+        # way -- SQLite does not auto-abort most statement errors and the
+        # connection is shared across the loop, so a claim staged by a failing
+        # issue would ride the next issue's commit and land with no cursor.
+        writer = Mock()
+        writer.prepare.side_effect = lambda store, github, run_id, issue, text, kind: (
+            store.stage_action(run_id, 'github_comment', {'n': issue['number']}),
+            (_ for _ in ()).throw(WatsonError('falhou depois de reservar')),
+        )
+        private_json(self.home / 'config.json', dict(self.cfg, github_comments=True, notify_owner=False))
+
+        outcome = cycle(self.home, model=Model(), github=FakeGitHub(), writer=writer)
+        self.assertTrue(outcome['errors'])
+
         store = Store(self.home)
         self.addCleanup(store.db.close)
-        cases = Cases(store)
-        key = store.stage_action(1, 'github_comment', {'n': 7})
-
-        class Unserializable:
-            pass
-
-        with self.assertRaises(Exception):
-            cases.save('demo/repo', 7, 'cursor', 'waiting_info', {'bad': Unserializable()})
-
-        cases.save('demo/repo', 8, 'cursor8', 'triaged', {'ok': True})
-        orphan = store.db.execute('SELECT COUNT(*) c FROM actions WHERE key=?', (key,)).fetchone()['c']
-        self.assertEqual(orphan, 0,
-                         'the staged claim survived a failed save and was published by a later commit')
+        staged = store.db.execute("SELECT COUNT(*) c FROM actions WHERE status='sending'").fetchone()['c']
+        self.assertEqual(staged, 0,
+                         'a claim staged by a failed issue survived and can now be published by a later commit')
 
     def test_a_quiet_agent_resolves_no_channel(self):
         from watson.workflow import owner_channel
