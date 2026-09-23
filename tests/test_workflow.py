@@ -12,13 +12,6 @@ from watson.browser import validate_profile, save_access
 from watson.metrics import record_usage
 from test_watson import FakeGitHub, FakeModel, CONFIG, ISSUE
 
-class CommentModel(FakeModel):
-    def ask(self, instruction, payload, schema, label):
-        if label.startswith('comment-'):
-            return {'language':'en','body':'body','owner_summary':'resumo'}
-        return super().ask(instruction,payload,schema,label)
-
-
 class Model(FakeModel):
     def ask(self, instruction, payload, schema, label):
         if label.startswith('comment-'):
@@ -99,7 +92,7 @@ class OwnerChannelTests(unittest.TestCase):
 
         cfg = dict(self.cfg, github_comments=True, notify_owner=False)
         private_json(self.home / 'config.json', cfg)
-        outcome = cycle(self.home, model=CommentModel(), github=FakeGitHub(), writer=writer)
+        outcome = cycle(self.home, model=Model(), github=FakeGitHub(), writer=writer)
 
         self.assertEqual(outcome['processed'], [])
         self.assertTrue(outcome['errors'])

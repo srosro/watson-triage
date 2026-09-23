@@ -1,11 +1,14 @@
 # The Plow cloud image: Watson, built for Plow to run as a cloud agent.
 #
-# The tag is an immutable `base-<sha>` naming one commit of the base's source
-# repo, plow-pbc/plow-hermes-agent. It is never moved: every tenant VM inherits
-# this exact filesystem while holding that owner's Plow credential, so a moving
-# tag would substitute code underneath them. This is the newest tag the registry
-# has published.
-FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-67021a7029e33e80bcb27899be6515a5a0e9b37b
+# Tag AND digest, the way the reference variant pins it. The `base-<sha>` tag
+# names one commit of the base's source repo (plow-pbc/plow-hermes-agent) and
+# is the provenance a human reads; the digest is what actually makes the pin
+# hold. A tag is a registry-side pointer, and "we never move it" is a promise,
+# not a mechanism -- every tenant VM inherits this filesystem while holding that
+# owner's Plow credential, so a recreated tag would run substituted root code
+# against live credentials. Resolved from the registry, not copied:
+#   docker-content-digest: sha256:0c3892e9…90ff0 for base-67021a70…
+FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-67021a7029e33e80bcb27899be6515a5a0e9b37b@sha256:0c3892e93c1a001c61fb7106396e0a4b7e0219008184fd90719caa84a3390ff0
 
 # Identity: only what is specific to this agent. plow-init writes the home's
 # SOUL.md on every boot as the base persona followed by this file; nothing is

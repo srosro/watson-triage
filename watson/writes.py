@@ -70,7 +70,3 @@ class GitHubWriter:
         except Exception:
             store.action_result(key,'unknown',{'instruction':'Conferir comentário antes de reenviar.'})
             raise
-
-    def comment(self, store, github, run_id, issue, text, kind):
-        """The two phases together, for callers that do not checkpoint between."""
-        return self.send(store, self.prepare(store, github, run_id, issue, text, kind))
