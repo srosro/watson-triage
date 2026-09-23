@@ -125,6 +125,27 @@ class OwnerChannelTests(unittest.TestCase):
         self.assertEqual(committed, 1)
         self.assertIsNotNone(cases.get('demo/repo', 7))
 
+    def test_a_failed_save_takes_the_staged_claim_down_with_it(self):
+        # The guarantee has to hold on the FAILURE path. SQLite does not
+        # auto-abort for most statement errors, and the cycle keeps using this
+        # connection across issues -- so a staged claim that survives a failed
+        # save rides the next issue's commit and lands with no cursor.
+        store = Store(self.home)
+        self.addCleanup(store.db.close)
+        cases = Cases(store)
+        key = store.stage_action(1, 'github_comment', {'n': 7})
+
+        class Unserializable:
+            pass
+
+        with self.assertRaises(Exception):
+            cases.save('demo/repo', 7, 'cursor', 'waiting_info', {'bad': Unserializable()})
+
+        cases.save('demo/repo', 8, 'cursor8', 'triaged', {'ok': True})
+        orphan = store.db.execute('SELECT COUNT(*) c FROM actions WHERE key=?', (key,)).fetchone()['c']
+        self.assertEqual(orphan, 0,
+                         'the staged claim survived a failed save and was published by a later commit')
+
     def test_a_quiet_agent_resolves_no_channel(self):
         from watson.workflow import owner_channel
         self.assertIsNone(owner_channel({'notify_owner': False}))
