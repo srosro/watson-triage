@@ -47,11 +47,11 @@ class GitHubWriter:
         existing = next((c for c in fresh['comments'] if marker in c['body']), None)
         if existing:
             return {'existing':{'url':existing['url'],'recovered':True}}
-        # Claimed here, not in send(): it is a local write recording that a send
-        # is about to happen, and it can fail. After the checkpoint that failure
-        # advances the cursor with nothing posted -- the very loss this split
-        # exists to close.
-        key = store.claim_action(run_id, 'github_comment', payload)
+        # STAGED, not committed: the claim rides the caller's cursor commit, so
+        # the two land together or neither does. Claiming after the checkpoint
+        # loses the update when it fails; claiming in its own transaction before
+        # the checkpoint strands a key that every retry then collides with.
+        key = store.stage_action(run_id, 'github_comment', payload)
         return {'payload':payload,'marker':marker,'text':text,'number':issue['number'],
                 'key':key,'existing':None}
 

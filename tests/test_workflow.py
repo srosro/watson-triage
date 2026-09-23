@@ -102,6 +102,29 @@ class OwnerChannelTests(unittest.TestCase):
         self.assertIsNone(Cases(store).get('demo/repo', 7),
                           'cursor was saved despite the failed preflight — the update is now lost')
 
+    def test_a_staged_claim_and_the_cursor_land_together_or_not_at_all(self):
+        # The half-states are what this pins. A claim committed without its
+        # cursor strands a key that every retry collides with -- the issue is
+        # stuck for good. A cursor committed without its claim drops the update
+        # silently. One transaction has neither.
+        store = Store(self.home)
+        self.addCleanup(store.db.close)
+        cases = Cases(store)
+        key = store.stage_action(1, 'github_comment', {'n': 7})
+
+        staged = store.db.execute('SELECT COUNT(*) c FROM actions WHERE key=?', (key,)).fetchone()['c']
+        self.assertEqual(staged, 1, 'staged row should be visible inside the open transaction')
+
+        store.db.rollback()
+        rolled = store.db.execute('SELECT COUNT(*) c FROM actions WHERE key=?', (key,)).fetchone()['c']
+        self.assertEqual(rolled, 0, 'an uncommitted claim must not survive — that is the stuck-forever case')
+
+        key = store.stage_action(1, 'github_comment', {'n': 7})
+        cases.save('demo/repo', 7, 'cursor', 'waiting_info', {'ok': True})
+        committed = store.db.execute('SELECT COUNT(*) c FROM actions WHERE key=?', (key,)).fetchone()['c']
+        self.assertEqual(committed, 1)
+        self.assertIsNotNone(cases.get('demo/repo', 7))
+
     def test_a_quiet_agent_resolves_no_channel(self):
         from watson.workflow import owner_channel
         self.assertIsNone(owner_channel({'notify_owner': False}))
