@@ -126,27 +126,51 @@ class OwnerChannelTests(unittest.TestCase):
         self.assertIsNotNone(cases.get('demo/repo', 7))
 
     def test_a_failed_issue_leaves_no_claim_for_the_next_one_to_publish(self):
-        # Driven through cycle(), not through Cases.save directly: rollback is
-        # the cycle's per-issue contract, and a test that called save() by hand
-        # would pin an owner that no longer exists. The hazard is real either
-        # way -- SQLite does not auto-abort most statement errors and the
-        # connection is shared across the loop, so a claim staged by a failing
-        # issue would ride the next issue's commit and land with no cursor.
-        writer = Mock()
-        writer.prepare.side_effect = lambda store, github, run_id, issue, text, kind: (
-            store.stage_action(run_id, 'github_comment', {'n': issue['number']}),
-            (_ for _ in ()).throw(WatsonError('falhou depois de reservar')),
-        )
-        private_json(self.home / 'config.json', dict(self.cfg, github_comments=True, notify_owner=False))
+        # TWO issues, and that is the whole point. With one, cycle()'s
+        # `finally: store.db.close()` implicitly rolls back and the test passes
+        # with no rollback at all -- which is exactly what the first version of
+        # this test did. The hazard needs a SECOND commit to publish the first
+        # issue's orphaned claim: SQLite does not auto-abort most statement
+        # errors and the connection is shared across the loop.
+        class TwoIssues(FakeGitHub):
+            def __init__(self):
+                super().__init__()
+                second = copy.deepcopy(ISSUE); second['number'] = 8
+                self.items = [self.item, second]
 
-        outcome = cycle(self.home, model=Model(), github=FakeGitHub(), writer=writer)
-        self.assertTrue(outcome['errors'])
+            def issue(self, repo, number):
+                return copy.deepcopy(next(i for i in self.items if i['number'] == number))
+
+        orphan_key = {}
+
+        def stage_then_fail(store, github, run_id, issue, text, kind):
+            key = store.stage_action(run_id, 'github_comment', {'n': issue['number']})
+            if issue['number'] == 7:
+                orphan_key['key'] = key
+                raise WatsonError('falhou depois de reservar')
+            return {'existing': None, 'number': issue['number'], 'key': key}
+
+        writer = Mock()
+        writer.prepare.side_effect = stage_then_fail
+        writer.send.return_value = {'url': 'https://example.invalid/c'}
+
+        private_json(self.home / 'config.json',
+                     dict(self.cfg, github_comments=True, notify_owner=False, cycle_limit=2))
+        store = Store(self.home)
+        store.track('demo/repo', 7); store.track('demo/repo', 8)
+        store.db.close()
+
+        outcome = cycle(self.home, model=Model(), github=TwoIssues(), writer=writer)
+        self.assertTrue(outcome['errors'], 'issue 7 was supposed to fail')
+        self.assertTrue(outcome['processed'], 'issue 8 was supposed to commit after it')
 
         store = Store(self.home)
         self.addCleanup(store.db.close)
-        staged = store.db.execute("SELECT COUNT(*) c FROM actions WHERE status='sending'").fetchone()['c']
-        self.assertEqual(staged, 0,
-                         'a claim staged by a failed issue survived and can now be published by a later commit')
+        # Issue 8's own claim is legitimately present; only issue 7's must not be.
+        orphans = store.db.execute('SELECT COUNT(*) c FROM actions WHERE key=?',
+                                   (orphan_key['key'],)).fetchone()['c']
+        self.assertEqual(orphans, 0,
+                         "issue 7's staged claim survived and issue 8's commit published it")
 
     def test_a_quiet_agent_resolves_no_channel(self):
         from watson.workflow import owner_channel
