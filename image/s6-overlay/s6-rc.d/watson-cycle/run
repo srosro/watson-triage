@@ -72,9 +72,9 @@ while :; do
   if [ -f "$STASH" ] && /command/s6-setuidgid hermes test -r "$STASH"; then
     echo "watson-cycle: REFUSING to run -- the agent's own uid can read $STASH," >&2
     echo "so a prompt injection could read the GitHub token. The file must be" >&2
-    echo "root-owned on the HOST; see docs/INSTALL.md section 2. On Docker" >&2
-    echo "Desktop for macOS there is no fix -- it does not enforce mounted file" >&2
-    echo "modes at all, so run the agent on a Linux host." >&2
+    echo "root-owned on the HOST -- see \"Give it a GitHub token\" in" >&2
+    echo "docs/INSTALL.md. On Docker Desktop for macOS there is no fix: it does" >&2
+    echo "not enforce mounted file modes at all, so run on a Linux host." >&2
     /bin/sleep 600 & wait $! || true
     continue
   fi
@@ -92,10 +92,10 @@ while :; do
     # distinguishes the two ways to arrive here, because the fixes differ.
     echo "watson-cycle: no GitHub token at $STASH -- standing down." >&2
     if [ -n "$AGENT_ID" ] && [ ! -e "$STASH" ]; then
-      echo "Hosted deploy: there is no hook for this credential yet -- see" >&2
-      echo "https://github.com/srosro/watson-triage/issues/2. Nothing to fix here." >&2
+      echo "Hosted deploy: it injects only the PLOW_* variables, so there is no" >&2
+      echo "hook for this credential yet. Nothing to fix here -- run under compose." >&2
     else
-      echo "Local compose: provision it per docs/INSTALL.md section 2." >&2
+      echo "Local compose: provision it per \"Give it a GitHub token\"." >&2
     fi
     /bin/sleep 600 & wait $! || true
     continue
