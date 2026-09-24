@@ -33,9 +33,8 @@ inference provider; that is a repository credential handed to a third party, and
 nothing downstream can undo it.
 
 Create a **fine-grained PAT** scoped to the repository, with **Issues: read**,
-**Contents: read** and **Actions: read**. For `repair`, add **Contents: write**
-*and* **Pull requests: write** — it pushes the fix as a branch before opening the
-draft PR, so pull-request access alone cannot complete one. Create one at
+**Contents: read** and **Actions: read** — read-only throughout, because this
+deployment triages and never repairs. Create one at
 <https://github.com/settings/personal-access-tokens/new>.
 
 Running locally with compose, put the **raw token** in `/etc/watson/github` —
@@ -107,9 +106,9 @@ your backlog. Issues assigned to you from then on are picked up on their own,
 every ten minutes. To have Watson look at something already open, tell it the
 number.
 
-Watson never merges. `repair` opens a draft pull request, and only after a
-regression test it wrote fails against the original source and passes against
-the fix.
+Watson never merges, and this deployment never repairs either — `repair` needs
+a checkout and a container to run the regression test in, neither of which the
+cloud agent has. Run it on your own machine for that.
 
 ## Running it on your own machine instead
 

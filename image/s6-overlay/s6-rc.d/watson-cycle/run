@@ -52,8 +52,9 @@ cycle() {
 #
 # An in-flight pass is left to finish or to be stopped by the container's own
 # grace period, where a killed send is recorded `unknown` rather than lost.
-stopping=""
-trap 'stopping=1' TERM INT
+# `exit 0` is deferred until the foreground child returns, which is exactly
+# that: immediate while idle, after the pass while one is running.
+trap 'exit 0' TERM INT
 
 while :; do
   # Tested by doing, not by reading the mode. A bind mount's permissions are
@@ -117,7 +118,6 @@ while :; do
   # is an ordinary outcome: one unreadable issue must not respawn this service,
   # and a crashing longrun is respawned in a tight loop.
   cycle || echo "watson-cycle: pass reported errors; see its JSON above" >&2
-  test -n "$stopping" && break
   # Backgrounded and waited, not a plain `sleep`: a trap does not interrupt a
   # foreground child, so a plain sleep would run its full 600s after SIGTERM
   # and shutdown would stall until the grace period SIGKILLed us -- mid-pass,
