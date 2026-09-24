@@ -10,7 +10,7 @@ Built by [Deltrak](https://github.com/delltrak).
 
 Watson reads an issue, its conversation, relevant source files and GitHub Actions results. It remembers earlier investigations, asks the author for missing information in the issue's language, and resumes when they reply. Owner updates are in Brazilian Portuguese over Plow/iMessage.
 
-This is a prototype. It never merges PRs. It runs two ways: locally on your own Mac, where browser validation and audio also work, or as a Plow cloud agent you text — under Docker Compose today, since the hosted deploy path cannot yet supply a GitHub credential (issue #2). Both think through Plow's inference, so no local Codex or ChatGPT session is needed.
+This is a prototype. It never merges PRs. It runs two ways: locally on your own Mac, where browser validation and audio also work, or as a Plow cloud agent you text — under Docker Compose today, since the hosted deploy path cannot yet supply a GitHub credential. Both think through Plow's inference, so no local Codex or ChatGPT session is needed.
 
 ## What is implemented
 
@@ -43,11 +43,11 @@ cycle every ten minutes.
 
 **The hosted `plow-agents deploy` path is not usable yet.** It injects only the
 `PLOW_*` variables, so the agent has no GitHub credential and the cycle stands
-down loudly rather than triaging. That is tracked in issue #2; until it lands,
-run Watson under Compose.
+down loudly rather than triaging. Until that is addressed, run Watson under
+Compose.
 
 **It will not take a GitHub token in chat, and refuses if you offer one.**
-`GH_TOKEN` is deploy-time input — [docs/INSTALL.md](docs/INSTALL.md#2-give-it-a-github-token--at-deploy-time-not-in-chat)
+`GH_TOKEN` is deploy-time input — [docs/INSTALL.md](docs/INSTALL.md#1-give-it-a-github-token--at-deploy-time-not-in-chat)
 owns that contract, including which path can supply it today. What the image is
 and what it deliberately does not own is in
 [docs/cloud-variant.md](docs/cloud-variant.md).
@@ -59,7 +59,7 @@ recording requires the optional browser dependencies. Docker is needed only for
 isolated repair tests.
 
 ```sh
-git clone https://github.com/srosro/watson-triage.git
+git clone https://github.com/delltrak/watson-triage.git
 cd watson-triage
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[browser]'

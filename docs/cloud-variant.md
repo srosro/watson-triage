@@ -24,7 +24,7 @@ out of `~/.codex/auth.json`. The container configures no `browser_profiles`, so
 you want the recorded evidence.
 
 **The owner's GitHub token never enters the container's long-lived environment.**
-[docs/INSTALL.md](INSTALL.md#2-give-it-a-github-token--at-deploy-time-not-in-chat)
+[docs/INSTALL.md](INSTALL.md#1-give-it-a-github-token--at-deploy-time-not-in-chat)
 owns the operator contract. The mechanism is a read-only bind mount: the raw
 token sits at `/opt/plow/watson-github`, owned `root:root 0600`, and the cycle
 service reads it as root before dropping privileges. Nothing puts it in the environment s6 publishes, so nothing has to remember to
@@ -40,9 +40,9 @@ which does not enforce mounted modes at all, and a Linux host whose own uid is
 
 The residual this page will not overstate away: the cycle hands the token to a
 child running as `hermes`, the gateway's own uid, so `/proc/<pid>/environ` is
-readable for the seconds a pass takes. Closing that needs a separate uid, which
-is a product change, tracked in
-[issue #2](https://github.com/srosro/watson-triage/issues/2).
+readable for the seconds a pass takes. Closing that needs a separate uid for the
+cycle, which moves `watson init` out of chat setup and into the service -- a
+product change rather than a hardening pass.
 
 ## What this repository must not own
 

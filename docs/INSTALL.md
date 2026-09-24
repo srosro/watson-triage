@@ -6,27 +6,11 @@ GitHub issues assigned to you and reports what it actually found.
 ## What you need
 
 A Plow account with a free line, and a GitHub fine-grained personal access token
-for the repository you want watched. Nothing on your Mac, and no ChatGPT or
-Codex account — the agent thinks through Plow's own inference.
+for the repository you want watched. The supported path builds the image on your
+machine, so Docker and a clone of this repository too. No ChatGPT or Codex
+account — the agent thinks through Plow's own inference.
 
-## 1. Deploy
-
-```sh
-git clone https://github.com/plow-pbc/plow-agents.git
-export PATH="$PWD/plow-agents/bin:$PATH"
-plow-agents login          # text the activation phrase to the number it prints
-plow-agents lines          # keep the ID of a line reported `free`
-plow-agents deploy --local --line ln_xxx   # builds this repo's image and brings compose up
-plow-agents agents         # until the status is `running`
-```
-
-`--local` is the path that works today, and it is the one the README points at.
-The hosted path takes a digest instead -- `plow-agents image show
-watson-delltrak --jq .plow.image` is a public read that prints the reference
-Plow currently pins -- but it cannot supply a GitHub credential yet, which
-section 2 covers. Do not start there expecting a working agent.
-
-## 2. Give it a GitHub token — at deploy time, not in chat
+## 1. Give it a GitHub token — at deploy time, not in chat
 
 **Watson will not accept a token you text it, and will refuse if you offer.** A
 token in the conversation is in the model's context and therefore at the
@@ -84,9 +68,32 @@ owner.
 
 On the hosted path, `plow-agents deploy` injects only the `PLOW_*` variables, so
 there is no hook for this yet and the agent stands down with "no GH_TOKEN"
-until [issue #2](https://github.com/srosro/watson-triage/issues/2) lands device
-authorization. **Until then, the hosted path is deploy-only — run Watson under
+until something like GitHub device authorization lands. **Until then, the hosted path is deploy-only — run Watson under
 compose if you want it working today.**
+
+## 2. Deploy
+
+```sh
+git clone https://github.com/plow-pbc/plow-agents.git
+export PATH="$PWD/plow-agents/bin:$PATH"
+git clone https://github.com/delltrak/watson-triage.git
+cd watson-triage           # --local builds THIS checkout; compose reads ./compose.yml
+plow-agents login          # text the activation phrase to the number it prints
+plow-agents lines          # keep the ID of a line reported `free`
+plow-agents deploy --local --line ln_xxx
+plow-agents agents         # until the status is `running`
+```
+
+`--local` builds the image here and brings compose up, which is why it runs
+from this checkout and after section 1: the token mount is declared with
+`create_host_path: false`, so a missing `/etc/watson/github` refuses to start
+rather than inventing an empty directory in its place.
+
+The hosted path takes a published digest instead -- `plow-agents image show
+watson-delltrak --jq .plow.image` is a public read that prints the reference
+Plow currently pins -- and needs no clone and no Docker. It also cannot supply
+a GitHub credential yet, so the agent stands down. Do not start there expecting
+a working agent.
 
 ## 3. Text it
 
