@@ -74,7 +74,7 @@ while :; do
     echo "root-owned on the HOST; see docs/INSTALL.md section 2. On Docker" >&2
     echo "Desktop for macOS there is no fix -- it does not enforce mounted file" >&2
     echo "modes at all, so run the agent on a Linux host." >&2
-    /bin/sleep 600
+    /bin/sleep 600 & wait $! || true
     continue
   fi
 
@@ -96,7 +96,7 @@ while :; do
     else
       echo "Local compose: provision it per docs/INSTALL.md section 2." >&2
     fi
-    /bin/sleep 600
+    /bin/sleep 600 & wait $! || true
     continue
   fi
 
@@ -104,7 +104,7 @@ while :; do
     # Not an error: a fresh agent has not been through watson-setup yet, and
     # there is nothing here to poll for -- the owner finishes it in chat.
     echo "watson-cycle: not configured yet; the owner runs watson-setup in chat" >&2
-    /bin/sleep 600
+    /bin/sleep 600 & wait $! || true
     continue
   fi
 
@@ -118,5 +118,10 @@ while :; do
   # and a crashing longrun is respawned in a tight loop.
   cycle || echo "watson-cycle: pass reported errors; see its JSON above" >&2
   test -n "$stopping" && break
-  /bin/sleep 600
+  # Backgrounded and waited, not a plain `sleep`: a trap does not interrupt a
+  # foreground child, so a plain sleep would run its full 600s after SIGTERM
+  # and shutdown would stall until the grace period SIGKILLed us -- mid-pass,
+  # which is the window this whole trap exists to close. `wait` returns as soon
+  # as the handler runs.
+  /bin/sleep 600 & wait $! || true
 done
