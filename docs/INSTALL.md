@@ -16,14 +16,15 @@ git clone https://github.com/plow-pbc/plow-agents.git
 export PATH="$PWD/plow-agents/bin:$PATH"
 plow-agents login          # text the activation phrase to the number it prints
 plow-agents lines          # keep the ID of a line reported `free`
-plow-agents image show watson-delltrak --jq .plow.image   # the current digest
-plow-agents deploy "$(plow-agents image show watson-delltrak --jq .plow.image)" --line ln_xxx
+plow-agents deploy --local --line ln_xxx   # builds this repo's image and brings compose up
 plow-agents agents         # until the status is `running`
 ```
 
-`image show` is a public read and needs no token. It prints the digest Plow
-currently pins, so the deploy always names an immutable reference without
-anybody pasting one by hand.
+`--local` is the path that works today, and it is the one the README points at.
+The hosted path takes a digest instead -- `plow-agents image show
+watson-delltrak --jq .plow.image` is a public read that prints the reference
+Plow currently pins -- but it cannot supply a GitHub credential yet, which
+section 2 covers. Do not start there expecting a working agent.
 
 ## 2. Give it a GitHub token — at deploy time, not in chat
 
