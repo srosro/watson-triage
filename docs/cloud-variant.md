@@ -53,7 +53,7 @@ The base owns these, and a copy here is a second owner that goes stale silently:
 | the `plow_chat` plugin SHA | `plow-hermes-agent`'s `ARG PLOW_CHAT_PLUGIN_SHA` |
 | boot, identity, the dotenv, `SOUL.md` composition | `plow-init` |
 | `PLOW_API_BASE`, `PLOW_AGENT_TOKEN`, `HERMES_CUSTOM_PLOW_API_KEY`, `AGENT_ID` | `plow-init`, published to the container environment |
-| the inference provider, model and vision lane | the base's `config.yaml` seed |
+| the *gateway's* inference provider, model and vision lane | the base's `config.yaml` seed |
 | the Agent Index reporter and its pinned client | the base's `agent-index` service and `vendor/client.pin` |
 
 This repository owns the persona, the `watson-setup` skill, the `watson-cycle`

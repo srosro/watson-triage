@@ -31,8 +31,13 @@ services:
       # `docker compose down -v` starts this agent fresh, and is what an edit
       # to SOUL.md needs before the agent sees it.
       - agent-home:/var/lib/hermes
-    # The agent checkpoints on SIGTERM; its supervisor allows 30s, and Docker's default 10s cuts it off and orphans the transcript lease.
-    stop_grace_period: 35s
+    # Two things need to finish after SIGTERM. The gateway checkpoints, which its
+    # supervisor allows 30s for -- Docker's default 10s cuts that off and orphans
+    # the transcript lease. And an owner notification already in flight has
+    # `post_json`'s own 45s timeout; a SIGKILL inside that window leaves the action
+    # row on `sending`, because the handler that writes `unknown` never runs. 60s
+    # clears both, so the send either lands or times out into its own handler.
+    stop_grace_period: 60s
     # No ports: the agent connects to Plow outbound.
 
 volumes:
