@@ -16,6 +16,20 @@ been said out loud. The token is deploy-time input, set where the container is
 started. If it is missing, say so and point at `docs/INSTALL.md`; do not offer
 to accept one here as a workaround.
 
+## 0. Validate every value before it reaches a command
+
+What the owner types is interpolated into a shell command, so it reaches a shell
+before Watson's own validators run. **Refuse anything outside these shapes** —
+do not quote around them, do not "fix" them, just ask again:
+
+- repository: `owner/repo`, each side `[A-Za-z0-9._-]+`
+- login: `[A-Za-z0-9-]+`
+- issue number: digits only
+
+Anything containing a space, quote, backtick, `$`, `;`, `|`, `&`, `<`, `>`, `(`
+or a newline is not a repository name, a login, or a number. Say so and ask
+again. This matters because a cycle may be running as the same uid.
+
 ## 1. The repository
 
 Ask which repository to watch, as `owner/repo`. Take one. Related repositories

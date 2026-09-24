@@ -9,8 +9,10 @@ come from.
 
 **Inference is Plow's lane, not a Codex subscription.** `analysis.PlowInference`
 calls `${PLOW_API_BASE}/v1/chat/completions` with the bearer `plow-init`
-publishes as `HERMES_CUSTOM_PLOW_API_KEY`, on the model the base configures for
-Hermes (`z-ai/glm-5.2`). There is no `codex login` and no ChatGPT account, and
+publishes as `HERMES_CUSTOM_PLOW_API_KEY`. **The base supplies the endpoint and
+the credential; Watson chooses its own model** — `z-ai/glm-5.2` unless
+`init --model` says otherwise. Changing the base's `config.yaml` seed moves the
+Hermes gateway's model, not Watson's. There is no `codex login` and no ChatGPT account, and
 this is the only backend — the local path uses it too, against a credential
 minted by `plow-agents mint`.
 

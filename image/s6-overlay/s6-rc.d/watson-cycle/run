@@ -41,13 +41,19 @@ cycle() {
     /opt/hermes/.venv/bin/watson --home "$WATSON_HOME" cycle
 }
 
-# s6 sends SIGTERM to this script on shutdown, and the shell does not pass it
-# to a foreground child on its own -- so a pass could keep running while the
-# supervisor moved on, and only container teardown would stop it. Kill the
-# child, then exit; `cycle` checkpoints per issue, so an interrupted pass
-# resumes rather than losing work.
-child=""
-trap 'test -n "$child" && kill -TERM "$child" 2>/dev/null; exit 0' TERM INT
+# On shutdown, stop starting NEW passes -- do NOT kill a running one.
+#
+# `cycle` commits the case cursor before delivering, deliberately, so an
+# uncertain send is never blindly replayed. Killing the child mid-pass can
+# therefore land between that commit and the send, and the next cycle reads the
+# cursor as unchanged and never retries: one routine `compose stop` silently
+# eats an issue update. That is the exact loss the checkpoint ordering exists
+# to prevent, so the trap must not introduce it.
+#
+# An in-flight pass is left to finish or to be stopped by the container's own
+# grace period, where a killed send is recorded `unknown` rather than lost.
+stopping=""
+trap 'stopping=1' TERM INT
 
 while :; do
   # Tested by doing, not by reading the mode. A bind mount's permissions are
@@ -110,8 +116,7 @@ while :; do
   # Never fatal. `cycle` exits 1 when any single tracked issue errored, which
   # is an ordinary outcome: one unreadable issue must not respawn this service,
   # and a crashing longrun is respawned in a tight loop.
-  cycle & child=$!
-  wait "$child" || echo "watson-cycle: pass reported errors; see its JSON above" >&2
-  child=""
+  cycle || echo "watson-cycle: pass reported errors; see its JSON above" >&2
+  test -n "$stopping" && break
   /bin/sleep 600
 done
