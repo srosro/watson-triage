@@ -10,7 +10,7 @@ Built by [Deltrak](https://github.com/delltrak).
 
 Watson reads an issue, its conversation, relevant source files and GitHub Actions results. It remembers earlier investigations, asks the author for missing information in the issue's language, and resumes when they reply. Owner updates are in Brazilian Portuguese over Plow/iMessage.
 
-It never merges PRs. It runs two ways: locally on your own Mac, where browser validation and audio also work, or as a Plow cloud agent you text — under Docker Compose today, since the hosted deploy path cannot yet supply a GitHub credential (issue #2). Both think through Plow's inference.
+This is a prototype. It never merges PRs. It runs two ways: locally on your own Mac, where browser validation and audio also work, or as a Plow cloud agent you text — under Docker Compose today, since the hosted deploy path cannot yet supply a GitHub credential (issue #2). Both think through Plow's inference, so no local Codex or ChatGPT session is needed.
 
 ## What is implemented
 
@@ -75,7 +75,9 @@ set -a; . ./plow-credentials; set +a
 
 Inference reads `PLOW_API_BASE` and `HERMES_CUSTOM_PLOW_API_KEY` (falling back
 to `PLOW_AGENT_TOKEN`) from the environment, which is what sourcing the minted
-credential above supplies. There is no `codex login` step: Codex was the
+credential above supplies — or `plow_credential_file` from the config below, which
+delivery already uses. Without one of those, the first investigation fails with
+`Sem credencial de inferência`. There is no `codex login` step: Codex was the
 inference backend until this fork replaced it, and nothing in Watson shells out
 to it any more.
 
@@ -138,7 +140,7 @@ A reproduced failure is required. Source changes are proposed by the model, whic
 .venv/bin/watson --home .watson voice 1 --output summary.mp3
 ```
 
-The ChatGPT internal Read Aloud endpoint receives `voice=sol` and Portuguese text. It uses a file-backed ChatGPT session at `${CODEX_HOME:-~/.codex}/auth.json`, without a public API key. This is the one path that still wants that file, and it is desktop-only: it is never reached on a cloud agent. This is an internal endpoint and may change or ignore voice selection. It does not refresh tokens and does not support keychain-only authentication. The speech text is sent to ChatGPT; credentials are not copied into memory. An error never silently switches to macOS speech.
+The ChatGPT internal Read Aloud endpoint receives `voice=sol` and Portuguese text. It uses a file-backed ChatGPT session at `${CODEX_HOME:-~/.codex}/auth.json`, without a public API key. This is the one path that still wants that file; it is unrelated to inference, which goes through Plow, and it is desktop-only: it is never reached on a cloud agent. This is an internal endpoint and may change or ignore voice selection. It does not refresh tokens and does not support keychain-only authentication. The speech text is sent to ChatGPT; credentials are not copied into memory. An error never silently switches to macOS speech.
 
 Native iMessage voice bubbles need a Plow backend operation that is not in its published API as inspected on 2026-09-15. `audio_mode=native` blocks file substitution. If the owner explicitly accepts regular files, `audio_mode=attachment` enables the legacy attachment delivery. Text/video workflow updates remain usable while native voice is pending.
 
@@ -146,7 +148,7 @@ Native iMessage voice bubbles need a Plow backend operation that is not in its p
 
 The bundled official client is unmodified, pinned at `87901f8b182a8a7c65ee3dd7267f8f835ee2a545` (Apache-2.0; included NOTICE/license). Watson records every measured inference invocation separately, including unsuccessful attempts that returned usage. OpenAI's counter names are translated into the ones this table stores (`normalize_usage`); untranslated, every row would land as zero. Cached input is separated from total input to avoid double-counting.
 
-`init --model` overrides the default (`z-ai/glm-5.2`); whichever applies is what usage is recorded under, so attribution always names a real model. The compatibility `session_model_usage` table contains real Watson invocation counts; it is not a claim that Watson runs Hermes. The client runs with a separate home so unrelated histories are not reported as Watson work. Do not configure an external agentsview index in that isolated home.
+`init --model` overrides the default (`z-ai/glm-5.2`); whichever applies is what usage is recorded under, so attribution always names a real model. The compatibility `session_model_usage` table contains real Watson invocation counts; it is not a claim that Watson runs Hermes — the registered runtime is Plow, which is what Watson actually invokes. The client runs with a separate home so unrelated histories are not reported as Watson work. Do not configure an external agentsview index in that isolated home.
 
 Set `agent_index_id` and `agent_repository_url` in private configuration, then:
 
