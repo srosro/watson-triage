@@ -47,10 +47,19 @@ RUN set -eu; \
 # this project declares no runtime dependencies, and resolving any would let the
 # install move a version the pinned base chose. The import check is the build's,
 # so a boot that could not start Watson fails here instead.
+#
+# `--no-deps` does not disable build isolation, so the backend `pyproject.toml`
+# asks for would otherwise resolve unpinned and run as root beside everything
+# else here that is pinned by version and digest. The build constraint pins it.
+# `--no-build-isolation` is not the alternative: the base's venv has no
+# setuptools, so it fails outright. The constraint carries the wheel's sha256
+# for the same reason `gh` above does: a version alone names a release, not the
+# artifact that gets executed.
 COPY pyproject.toml /opt/watson/pyproject.toml
 COPY watson/ /opt/watson/watson/
 RUN set -eu; \
-    uv pip install --python /opt/hermes/.venv/bin/python --no-deps /opt/watson; \
+    printf '%s\n' 'setuptools==80.9.0 --hash=sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922' >/tmp/build-constraints.txt; \
+    uv pip install --python /opt/hermes/.venv/bin/python --no-deps --build-constraints /tmp/build-constraints.txt /opt/watson; \
     /opt/hermes/.venv/bin/watson --help >/dev/null
 
 # The boot layer. COPY merges into the base's tree, so its own `user` bundle
